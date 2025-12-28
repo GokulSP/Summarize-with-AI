@@ -1868,20 +1868,33 @@ Format exactly as shown:
 		const { formatQA } = REGEX_PATTERNS;
 
 		// Convert [From Article] and [Expert Context] to section headers
-		formatted = formatted.replace(formatQA.brackets, '<p><strong>$1</strong></p>\n');
+		formatted = formatted.replace(formatQA.brackets, '<p><strong>$1</strong></p>');
+
+		// Add line break BEFORE any bold label ending with colon (like "**Actionable Insights:**")
+		// This ensures all section headers appear on their own line
+		// Look for sentence ending (. ! ?) or word character followed by space(s) and **Text:**
+		formatted = formatted.replace(/([.!?a-z])\s+(\*\*[A-Z][^*]+:\*\*)/g, '$1\n$2');
 
 		// Convert **bold** to <strong>
 		formatted = formatted.replace(formatQA.bold, '<strong>$1</strong>');
+
+		// Remove excessive blank lines (more than 2 consecutive newlines)
+		formatted = formatted.replace(/\n{3,}/g, '\n\n');
 
 		// Split into lines for processing
 		const lines = formatted.split('\n');
 		const result = [];
 		let inList = false;
+		let lastWasSectionHeader = false;
 
 		for (const line of lines) {
 			const trimmedLine = line.trim();
 
 			if (!trimmedLine) {
+				// Skip empty lines after section headers to prevent extra spacing
+				if (lastWasSectionHeader) {
+					continue;
+				}
 				// Close list if we were in one
 				if (inList) {
 					result.push('</ul>');
@@ -1899,14 +1912,34 @@ Format exactly as shown:
 				// Remove the number and add as list item
 				const content = trimmedLine.replace(formatQA.numberedListRemove, '');
 				result.push(`<li>${content}</li>`);
+				lastWasSectionHeader = false;
 			}
-			// Check if line already has HTML tags
+			// Check if line is a section header (contains colon before closing tags)
+			// Matches: <strong>Text:</strong>, <p><strong>Text:</strong></p>, or <strong>Text:</strong></p>
+			else if (
+				trimmedLine.includes(':') &&
+				trimmedLine.match(/^(<p>)?<strong>[^<]+:<\/strong>(<\/p>)?$/)
+			) {
+				if (inList) {
+					result.push('</ul>');
+					inList = false;
+				}
+				// Wrap standalone <strong> headers in paragraph tags
+				if (!trimmedLine.startsWith('<p>')) {
+					result.push(`<p>${trimmedLine}</p>`);
+				} else {
+					result.push(trimmedLine);
+				}
+				lastWasSectionHeader = true;
+			}
+			// Check if line already has HTML tags (but not section headers)
 			else if (trimmedLine.startsWith('<p>') || trimmedLine.startsWith('<strong>')) {
 				if (inList) {
 					result.push('</ul>');
 					inList = false;
 				}
 				result.push(trimmedLine);
+				lastWasSectionHeader = false;
 			}
 			// Regular paragraph
 			else {
@@ -1915,6 +1948,7 @@ Format exactly as shown:
 					inList = false;
 				}
 				result.push(`<p>${trimmedLine}</p>`);
+				lastWasSectionHeader = false;
 			}
 		}
 
@@ -1974,13 +2008,35 @@ Instructions:
 5. Provide actionable insights where possible
 6. Keep your response focused and under 150 words
 
-Format your answer to clearly show: [From Article] ... [Expert Context] ... (if providing additional insights)`;
+Format requirements:
+- Use ONLY these section headers: [From Article:] and [Expert Context:]
+- Do NOT create additional section headers like "Key insight:", "Immediate actions:", "Actionable approaches:", etc.
+- Present insights and actions as regular paragraphs or bullet points within the two main sections
+- Keep your formatting simple and consistent`;
 
-			const payload = {
-				model: modelConfig.id,
-				messages: [{ role: 'user', content: prompt }],
-				max_tokens: 800,
-			};
+			// Build payload based on service
+			let payload;
+			if (service === 'gemini') {
+				// Gemini API format
+				payload = {
+					contents: [
+						{
+							parts: [
+								{
+									text: prompt,
+								},
+							],
+						},
+					],
+				};
+			} else {
+				// Claude API format
+				payload = {
+					model: modelConfig.id,
+					messages: [{ role: 'user', content: prompt }],
+					max_tokens: 800,
+				};
+			}
 
 			const response = await sendApiRequest(service, apiKey, payload, modelConfig, true);
 
@@ -1988,7 +2044,17 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
 				throw new Error(`API Error (${response.status})`);
 			}
 
-			const answer = response.data?.content?.[0]?.text || 'No answer received';
+			// Parse answer based on service
+			let answer;
+			if (service === 'gemini') {
+				// Gemini response format
+				const candidate = response.data?.candidates?.[0];
+				const part = candidate?.content?.parts?.[0];
+				answer = part?.text || 'No answer received';
+			} else {
+				// Claude response format
+				answer = response.data?.content?.[0]?.text || 'No answer received';
+			}
 
 			// Format the answer with proper HTML structure
 			const formattedAnswer = formatQAAnswer(answer);
