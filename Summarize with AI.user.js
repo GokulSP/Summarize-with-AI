@@ -2827,6 +2827,7 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
         box-shadow: var(--shadow-lg);
         max-width: 680px; width: 90%; max-height: 90vh; min-height: 90vh;
         overflow-y: auto;
+        overflow-x: clip;
         position: relative;
         font-size: var(--font-size-base);
         line-height: var(--line-height-normal);
@@ -2836,6 +2837,21 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
         border-radius: var(--radius-md);
         display: flex;
         flex-direction: column;
+      }
+      #${CONFIG.ids.content}::-webkit-scrollbar {
+        width: 10px;
+      }
+      #${CONFIG.ids.content}::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      #${CONFIG.ids.content}::-webkit-scrollbar-thumb {
+        background: var(--color-border);
+        border-radius: var(--radius-sm);
+        border: 2px solid var(--color-bg-primary);
+      }
+      #${CONFIG.ids.content} {
+        scrollbar-width: thin;
+        scrollbar-color: var(--color-border) transparent;
       }
       .summary-menubar {
         display: flex; justify-content: flex-end; gap: 12px;
