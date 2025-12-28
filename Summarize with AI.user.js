@@ -33,7 +33,6 @@
 			closeButton: 'summarize-close',
 			content: 'summarize-content',
 			error: 'summarize-error',
-			addModelItem: 'add-custom-model',
 			retryButton: 'summarize-retry-button',
 			copyButton: 'summarize-copy-button',
 			askButton: 'summarize-ask-button',
@@ -45,11 +44,6 @@
 			modalMessage: 'custom-modal-message',
 			modalInput: 'custom-modal-input',
 			modalActions: 'custom-modal-actions',
-		},
-
-		// Storage Keys
-		storage: {
-			customModels: 'custom_ai_models',
 		},
 
 		// Timing & Duration (milliseconds)
@@ -133,7 +127,7 @@
 				error: '#d32f2f',
 			},
 			fontWeights: {
-				activeModel: 'bold',
+				activeModel: 'normal',
 			},
 		},
 
@@ -257,7 +251,6 @@ Format exactly as shown:
 	const StorageService = {
 		keys: {
 			LAST_USED_MODEL: 'last_used_model',
-			CUSTOM_MODELS: CONFIG.storage.customModels,
 			API_KEY: service => `${service}_api_key`,
 		},
 
@@ -271,56 +264,6 @@ Format exactly as shown:
 				return;
 			}
 			return await GM.setValue(this.keys.LAST_USED_MODEL, modelId);
-		},
-
-		async getCustomModels() {
-			try {
-				const storedModels = await GM.getValue(this.keys.CUSTOM_MODELS, '[]');
-				const parsedModels = JSON.parse(storedModels);
-
-				if (
-					Array.isArray(parsedModels) &&
-					parsedModels.every(m => typeof m === 'object' && m.id && m.service)
-				) {
-					return parsedModels;
-				} else {
-					console.warn(
-						'StorageService: Invalid custom model format found. Resetting.',
-						parsedModels,
-					);
-					await this.setCustomModels([]);
-					return [];
-				}
-			} catch (error) {
-				console.error('StorageService: Failed to load custom models:', error);
-				await this.setCustomModels([]);
-				return [];
-			}
-		},
-
-		async setCustomModels(models) {
-			if (!Array.isArray(models)) {
-				throw new Error('StorageService: Custom models must be an array');
-			}
-			return await GM.setValue(this.keys.CUSTOM_MODELS, JSON.stringify(models));
-		},
-
-		async addCustomModel(model) {
-			if (!model || !model.id || !model.service) {
-				throw new Error('StorageService: Invalid model object');
-			}
-			const currentModels = await this.getCustomModels();
-			currentModels.push(model);
-			return await this.setCustomModels(currentModels);
-		},
-
-		async removeCustomModel(modelId, service) {
-			const currentModels = await this.getCustomModels();
-			const lowerModelId = modelId.toLowerCase();
-			const filtered = currentModels.filter(
-				m => !(m.id.toLowerCase() === lowerModelId && m.service === service),
-			);
-			return await this.setCustomModels(filtered);
 		},
 
 		async getApiKey(service) {
@@ -386,33 +329,6 @@ Format exactly as shown:
 	};
 
 	// Validation Functions
-	const Validators = {
-		isValidModelObject(model) {
-			return typeof model === 'object' && model.id && model.service;
-		},
-
-		isValidModelArray(models) {
-			return Array.isArray(models) && models.every(this.isValidModelObject);
-		},
-
-		modelExistsInCustom(service, modelId) {
-			return state.customModels.some(
-				m => m.service === service && m.id.toLowerCase() === modelId.toLowerCase(),
-			);
-		},
-
-		modelExistsInStandard(service, modelId) {
-			return CONFIG.modelGroups[service]?.models.some(
-				m => m.id.toLowerCase() === modelId.toLowerCase(),
-			);
-		},
-
-		modelExists(service, modelId) {
-			return (
-				this.modelExistsInCustom(service, modelId) || this.modelExistsInStandard(service, modelId)
-			);
-		},
-	};
 
 	// Custom Modal Service - Dieter Rams inspired design
 	const ModalService = {
@@ -615,18 +531,6 @@ Format exactly as shown:
 			await ModalService.alert(`${toTitleCase(service)} API key has been cleared.`);
 		},
 
-		async modelExists(modelId) {
-			await ModalService.alert(`Model "${modelId}" already exists.`);
-		},
-
-		async modelAdded(modelId) {
-			await ModalService.alert(`Model "${modelId}" added successfully.`);
-		},
-
-		async modelRemoved(modelId) {
-			await ModalService.alert(`Model "${modelId}" has been removed.`);
-		},
-
 		async invalidService() {
 			await ModalService.alert('Invalid service provided.');
 		},
@@ -635,7 +539,6 @@ Format exactly as shown:
 	const state = {
 		activeModel: CONFIG.modelGroups.claude.models[0].id,
 		articleData: null,
-		customModels: [],
 		currentSummary: null,
 		dropdownNeedsUpdate: true,
 		articleImages: [],
@@ -840,7 +743,6 @@ Format exactly as shown:
 
 	// --- Main Functions ---
 	async function initialize() {
-		state.customModels = await StorageService.getCustomModels();
 		state.articleData = getArticleData();
 
 		if (state.articleData) {
@@ -1155,45 +1057,17 @@ Format exactly as shown:
 		const fragment = document.createDocumentFragment();
 
 		for (const [service, group] of Object.entries(CONFIG.modelGroups)) {
-			const standardModels = group.models || [];
+			const models = group.models || [];
 
-			// Optimize: filter custom models for this service in one pass
-			const serviceCustomModels = state.customModels
-				.filter(m => m.service === service)
-				.map(m => ({ id: m.id }));
-
-			// Optimize: use Map for O(1) lookups and deduplicate in single pass
-			const seenIds = new Map();
-			const allModelObjects = [];
-
-			// Process all models in single pass (spread creates new array only once)
-			for (const model of [...standardModels, ...serviceCustomModels]) {
-				const lowerCaseId = model.id.toLowerCase();
-				if (!seenIds.has(lowerCaseId)) {
-					seenIds.set(lowerCaseId, true);
-					allModelObjects.push(model);
-				}
-			}
-
-			// Sort once after filtering (more efficient than sorting during insertion)
-			allModelObjects.sort((a, b) => a.id.localeCompare(b.id));
-
-			if (allModelObjects.length > 0) {
+			if (models.length > 0) {
 				const groupDiv = createElement('div', { className: 'model-group' });
 				groupDiv.appendChild(createHeader(group.name, service));
-				for (const modelObj of allModelObjects) {
+				for (const modelObj of models) {
 					groupDiv.appendChild(createModelItem(modelObj, service));
 				}
 				fragment.appendChild(groupDiv);
 			}
 		}
-
-		fragment.appendChild(
-			createElement('hr', {
-				style: 'margin:8px 0;border:none;border-top:1px solid #eee',
-			}),
-		);
-		fragment.appendChild(createAddModelItem());
 
 		dropdownElement.innerHTML = '';
 		dropdownElement.appendChild(fragment);
@@ -1227,47 +1101,22 @@ Format exactly as shown:
 	}
 
 	function createModelItem(modelObj, service) {
-		const isCustom = !CONFIG.modelGroups[service]?.models.some(m => m.id === modelObj.id);
-
 		const item = createElement('div', {
 			className: 'model-item',
 			textContent: modelObj.name || modelObj.id,
-			title: isCustom ? 'Click to use. Long press to delete.' : 'Click to use this model.',
+			title: 'Click to use this model.',
 		});
 
 		// Store data as attributes for event delegation
 		item.dataset.modelId = modelObj.id;
 		item.dataset.service = service;
-		item.dataset.isCustom = isCustom;
 
 		if (modelObj.id === state.activeModel) {
 			item.style.fontWeight = CONFIG.styles.fontWeights.activeModel;
 			item.style.color = CONFIG.styles.colors.activeModel;
 		}
 
-		// Attach long press handler for custom models
-		if (isCustom) {
-			const modelPressHandler = createLongPressHandler(() =>
-				handleModelRemoval(modelObj.id, service),
-			);
-			modelPressHandler.attachTo(item);
-			item.dataset.hasLongPress = 'true';
-		}
-
 		return item;
-	}
-
-	function createAddModelItem() {
-		return createElement('div', {
-			id: CONFIG.ids.addModelItem,
-			className: 'model-item add-model-item',
-			textContent: '+ Add Custom Model',
-			onclick: async e => {
-				e.stopPropagation();
-				UIHelpers.hideDropdown();
-				await handleAddModel();
-			},
-		});
 	}
 
 	function toggleDropdown() {
@@ -1396,7 +1245,7 @@ Format exactly as shown:
 			const group = CONFIG.modelGroups[serviceKey];
 			const modelConfig = group.models.find(m => m.id === activeId);
 			if (modelConfig) {
-				const config = { ...modelConfig, service: serviceKey, isCustom: false };
+				const config = { ...modelConfig, service: serviceKey };
 
 				// Limit cache size to prevent memory leak
 				if (_modelConfigCache.size >= MAX_CACHE_SIZE) {
@@ -1409,27 +1258,8 @@ Format exactly as shown:
 			}
 		}
 
-		const customConfig = state.customModels.find(m => m.id === activeId);
-		if (customConfig) {
-			const config = { ...customConfig, isCustom: true };
-
-			// Limit cache size to prevent memory leak
-			if (_modelConfigCache.size >= MAX_CACHE_SIZE) {
-				const firstKey = _modelConfigCache.keys().next().value;
-				_modelConfigCache.delete(firstKey);
-			}
-
-			_modelConfigCache.set(activeId, config);
-			return config;
-		}
-
 		console.error(`Summarize with AI: Active model configuration not found for ID: ${activeId}`);
 		return null;
-	}
-
-	// Clear cache when custom models are modified
-	function clearModelConfigCache() {
-		_modelConfigCache.clear();
 	}
 
 	function validateInoreaderArticle() {
@@ -1729,61 +1559,6 @@ Format exactly as shown:
 		}
 	}
 
-	async function handleAddModel() {
-		const service = 'claude';
-
-		const modelId = await ModalService.prompt(
-			'Enter the Claude model ID:',
-			'',
-			'e.g., claude-3-opus-20240229',
-		);
-
-		if (modelId === null) return; // User cancelled
-
-		const trimmedModelId = modelId.trim();
-		if (!trimmedModelId) {
-			await ModalService.alert('Model ID cannot be empty.');
-			return;
-		}
-
-		await addCustomModel(service, trimmedModelId);
-	}
-
-	async function addCustomModel(service, modelId) {
-		if (Validators.modelExists(service, modelId)) {
-			await NotificationService.modelExists(modelId);
-			return;
-		}
-
-		const newModel = { id: modelId, service };
-		state.customModels.push(newModel);
-		await StorageService.addCustomModel(newModel);
-		clearModelConfigCache(); // Clear cache when models are modified
-		state.dropdownNeedsUpdate = true;
-		await NotificationService.modelAdded(modelId);
-	}
-
-	async function handleModelRemoval(modelId, service) {
-		const confirmed = await ModalService.confirm(`Remove model "${modelId}"?`, 'Remove', 'Cancel');
-		if (confirmed) {
-			await StorageService.removeCustomModel(modelId, service);
-			state.customModels = await StorageService.getCustomModels();
-			clearModelConfigCache(); // Clear entire cache when models are modified
-
-			if (state.activeModel === modelId) {
-				state.activeModel = CONFIG.modelGroups.claude.models[0].id;
-				await StorageService.setLastUsedModel(state.activeModel);
-			}
-
-			state.dropdownNeedsUpdate = true;
-			if (dom.dropdown && dom.dropdown.style.display !== 'none') {
-				populateDropdown(dom.dropdown);
-				state.dropdownNeedsUpdate = false;
-			}
-			await NotificationService.modelRemoved(modelId);
-		}
-	}
-
 	// --- Save Summary Functionality ---
 	function handleCopySummary() {
 		if (!state.currentSummary) {
@@ -2047,10 +1822,6 @@ Format exactly as shown:
 			}
 
 			const { modelConfig, apiKey, service } = validationResult;
-
-			// Show loading state in answer container
-			answerContainer.innerHTML =
-				'<p class="glow" style="text-align: center; padding: 20px;">Thinking...</p>';
 
 			const prompt = `You are an expert analyst with deep knowledge across business, technology, management, and research. Use the article below as your primary context, but draw upon your full expertise to provide comprehensive, insightful answers.
 
@@ -2349,7 +2120,9 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
 		let focusOutTimer = null;
 
 		document.addEventListener('focusin', event => {
-			if (event.target?.closest(CONFIG.selectors.input)) {
+			// Exclude modal inputs from hiding the button
+			const isModalInput = event.target?.closest('.custom-modal-overlay');
+			if (event.target?.closest(CONFIG.selectors.input) && !isModalInput) {
 				if (focusOutTimer) {
 					clearTimeout(focusOutTimer);
 					focusOutTimer = null;
@@ -2362,7 +2135,9 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
 		document.addEventListener(
 			'focusout',
 			event => {
-				const isLeavingInput = event.target?.closest(CONFIG.selectors.input);
+				// Exclude modal inputs from the restore logic
+				const isModalInput = event.target?.closest('.custom-modal-overlay');
+				const isLeavingInput = event.target?.closest(CONFIG.selectors.input) && !isModalInput;
 				const isEnteringInput = event.relatedTarget?.closest(CONFIG.selectors.input);
 
 				if (isLeavingInput && !isEnteringInput && state.articleData) {
@@ -2404,9 +2179,20 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
         --color-border-light: #f0f0f0;
         --color-bg-primary: #ffffff;
         --color-bg-hover: #f5f5f5;
-        --color-bg-active: #e8e8e8;
         --color-error: #d32f2f;
         --color-accent: #1A73E8;
+
+        /* Component-specific colors */
+        --button-bg: #1a1a1a;
+        --button-bg-hover: #2a2a2a;
+        --button-text: #ffffff;
+        --input-focus-border: #d0d0d0;
+        --overlay-bg: rgba(0, 0, 0, 0.4);
+        --modal-button-text: #666;
+        --answer-border: #1a1a1a;
+        --group-header-bg: #fafafa;
+        --menubar-bg: rgba(255, 255, 255, 0.98);
+        --section-bg: #f8f8f8;
 
         /* Spacing Scale (based on 4px grid) */
         --space-xs: 8px;
@@ -2418,21 +2204,20 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
         /* Typography Scale */
         --font-size-sm: 0.875rem;   /* 14px */
         --font-size-base: 1rem;      /* 16px */
-        --font-size-lg: 1.125rem;    /* 18px */
         --font-weight-normal: 400;
-        --font-weight-medium: 500;
-        --line-height-tight: 1.4;
+        --font-weight-semibold: 600;
         --line-height-normal: 1.6;
 
         /* Border Radius */
         --radius-sm: 4px;
         --radius-md: 8px;
-        --radius-lg: 12px;
 
         /* Shadows (unified elevation system) */
         --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
         --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.12);
         --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+        --shadow-button: 0 2px 8px rgba(0, 0, 0, 0.15), 0 1px 2px rgba(0, 0, 0, 0.1);
+        --shadow-button-hover: 0 4px 12px rgba(0, 0, 0, 0.2), 0 2px 4px rgba(0, 0, 0, 0.15);
 
         /* Transitions (consistent timing) */
         --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
@@ -2451,14 +2236,26 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
       /* Dark Mode Overrides */
       @media (prefers-color-scheme: dark) {
         :root {
-          --color-text-primary: #ffffff;
-          --color-text-secondary: #b8b8b8;
-          --color-text-tertiary: #999;
+          --color-text-primary: #e8e8e8;
+          --color-text-secondary: #999;
+          --color-text-tertiary: #777;
           --color-border: #333;
           --color-border-light: #2a2a2a;
           --color-bg-primary: #1a1a1a;
           --color-bg-hover: #2a2a2a;
-          --color-bg-active: #333;
+          --button-bg: #e8e8e8;
+          --button-bg-hover: #ffffff;
+          --button-text: #1a1a1a;
+          --input-focus-border: #444;
+          --overlay-bg: rgba(0, 0, 0, 0.6);
+          --modal-button-text: #999;
+          --answer-border: #666;
+          --group-header-bg: #242424;
+          --menubar-bg: rgba(26, 26, 26, 0.98);
+          --section-bg: #1a1a1a;
+          --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
+          --shadow-button: 0 2px 8px rgba(0, 0, 0, 0.3);
+          --shadow-button-hover: 0 4px 12px rgba(0, 0, 0, 0.4);
         }
       }
 
@@ -2539,7 +2336,7 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
       }
 
       .modal-overlay.modal-active {
-        background: rgba(0, 0, 0, 0.4);
+        background: var(--overlay-bg);
         opacity: 1;
       }
 
@@ -2585,8 +2382,9 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
       }
 
       .modal-input:focus {
-        border-color: var(--color-text-primary);
+        border-color: var(--input-focus-border);
         background: var(--color-bg-primary);
+        box-shadow: none;
       }
 
       .modal-input::placeholder {
@@ -2606,15 +2404,12 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
         background: transparent;
         font-family: ${fontFamily};
         font-size: var(--font-size-base);
-        font-weight: var(--font-weight-medium);
+        font-weight: var(--font-weight-normal);
         cursor: pointer;
         transition: background var(--transition-fast);
-        color: var(--color-text-secondary);
+        color: var(--modal-button-text);
         user-select: none;
         -webkit-user-select: none;
-        -moz-user-select: none;
-        -ms-user-select: none;
-        -webkit-touch-callout: none;
         -webkit-tap-highlight-color: transparent;
       }
 
@@ -2631,7 +2426,6 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
         outline-offset: -2px;
       }
 
-      /* Remove redundant primary button styles - they're identical to base */
       .modal-button-secondary {
         border-right: 1px solid var(--color-border-light);
       }
@@ -2646,95 +2440,96 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
       #${CONFIG.ids.button} {
         position: fixed; bottom: 24px; right: 24px;
         width: 56px; height: 56px;
-        background: #1a1a1a;
-        color: #ffffff; font-size: 1rem; font-weight: 500;
+        background: var(--button-bg);
+        color: var(--button-text);
+        font-size: 1rem; font-weight: var(--font-weight-normal);
         font-family: ${fontFamily};
-        border-radius: 50%; cursor: pointer; z-index: 2147483640;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), 0 1px 2px rgba(0, 0, 0, 0.1);
-        display: flex !important; align-items: center !important; justify-content: center !important;
-        transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+        border-radius: 50%; cursor: pointer; z-index: var(--z-button);
+        box-shadow: var(--shadow-button);
+        display: flex; align-items: center; justify-content: center;
+        transition: all var(--transition-fast);
         line-height: 1;
         user-select: none;
         -webkit-user-select: none;
-        -moz-user-select: none;
-        -ms-user-select: none;
-        -webkit-touch-callout: none;
         -webkit-tap-highlight-color: transparent;
         border: none;
       }
       #${CONFIG.ids.button}:hover {
-        background: #2a2a2a;
-        color: #ffffff;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2), 0 2px 4px rgba(0, 0, 0, 0.15);
+        background: var(--button-bg-hover);
+        box-shadow: var(--shadow-button-hover);
         transform: translateY(-1px);
       }
       #${CONFIG.ids.dropdown} {
         position: fixed; bottom: 80px; right: 20px;
-        background: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); z-index: 2147483641;
+        background: var(--color-bg-primary);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        box-shadow: var(--shadow-lg);
+        z-index: var(--z-dropdown);
         max-height: 70vh; overflow-y: auto;
-        padding: 8px; width: 300px;
+        padding: var(--space-xs); width: 300px;
         font-family: ${fontFamily};
         display: none;
-        animation: fadeIn 0.2s ease-out;
+        animation: fadeIn var(--transition-base) ease-out;
       }
       #${CONFIG.ids.overlay} {
         position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-        background-color: rgba(0, 0, 0, 0.4);
-        z-index: 2147483645;
+        background-color: var(--overlay-bg);
+        z-index: var(--z-overlay);
         display: flex; align-items: center; justify-content: center;
         overflow: hidden;
         font-family: ${fontFamily};
         animation: fadeIn 0.3s ease-out;
       }
       #${CONFIG.ids.content} {
-        background-color: #fff;
-        color: #1a1a1a;
+        background-color: var(--color-bg-primary);
+        color: var(--color-text-primary);
         padding: 0;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+        box-shadow: var(--shadow-lg);
         max-width: 680px; width: 90%; max-height: 85vh;
         overflow-y: auto;
         position: relative;
-        font-size: 1rem; line-height: 1.6;
+        font-size: var(--font-size-base);
+        line-height: var(--line-height-normal);
         animation: slideInUp 0.3s ease-out;
         white-space: normal;
         box-sizing: border-box;
-        border-radius: 8px;
+        border-radius: var(--radius-md);
         display: flex;
         flex-direction: column;
       }
       .summary-menubar {
         display: flex; justify-content: flex-end; gap: 12px;
         position: sticky; bottom: 0;
-        background: rgba(255, 255, 255, 0.98);
+        background: var(--menubar-bg);
         padding: 12px 24px;
-        border-top: 1px solid #e8e8e8;
+        border-top: 1px solid var(--color-border-light);
         z-index: 10;
         backdrop-filter: blur(10px);
       }
       .menubar-button {
         background: transparent;
-        border: 1px solid #e0e0e0;
+        border: 1px solid var(--color-border);
         font-family: ${fontFamily};
-        font-size: 0.95rem; font-weight: 500;
-        color: #666; cursor: pointer;
-        padding: 6px 12px; border-radius: 4px;
-        transition: all 0.15s ease;
+        font-size: 0.95rem;
+        font-weight: var(--font-weight-normal);
+        color: var(--color-text-secondary);
+        cursor: pointer;
+        padding: 6px 12px;
+        border-radius: var(--radius-sm);
+        transition: all var(--transition-fast);
         white-space: nowrap;
         user-select: none;
         -webkit-user-select: none;
-        -moz-user-select: none;
-        -ms-user-select: none;
-        -webkit-touch-callout: none;
         -webkit-tap-highlight-color: transparent;
       }
       .menubar-button:hover {
-        background: #f5f5f5;
-        border-color: #d0d0d0;
-        color: #1a1a1a;
+        background: var(--color-bg-hover);
+        border-color: var(--color-border);
+        color: var(--color-text-primary);
       }
       .summary-content-body {
-        padding: 32px 40px;
+        padding: var(--space-lg) var(--space-xl);
         flex: 1;
         display: flex;
         flex-direction: column;
@@ -2746,15 +2541,20 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
       .summary-content-body:has(p:not(.glow)) {
         justify-content: flex-start;
       }
-      #${CONFIG.ids.content} * {
-        font-family: ${fontFamily} !important;
-        line-height: inherit !important;
+      #${CONFIG.ids.content},
+      #${CONFIG.ids.content} p,
+      #${CONFIG.ids.content} li,
+      #${CONFIG.ids.content} strong,
+      #${CONFIG.ids.content} button,
+      #${CONFIG.ids.content} input {
+        font-family: ${fontFamily};
       }
       #${CONFIG.ids.content} p {
         margin-top: 0;
         margin-bottom: 1.2em;
         color: inherit;
         max-width: 65ch;
+        line-height: 1.5;
       }
       #${CONFIG.ids.content} ul {
         margin: 1.2em 0;
@@ -2768,13 +2568,13 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
         line-height: 1.5;
       }
       #${CONFIG.ids.content} strong {
-        font-weight: 600;
-        color: #0a0a0a;
+        font-weight: var(--font-weight-semibold);
+        color: var(--color-text-primary);
         font-size: 1em;
         letter-spacing: -0.005em;
       }
       #${CONFIG.ids.content} span:not([class*="article-"]) {
-        color: inherit !important;
+        color: inherit;
       }
       /* Error Notification - Dieter Rams Style */
       .error-notification {
@@ -2782,20 +2582,20 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
         bottom: 80px;
         left: 50%;
         transform: translateX(-50%) translateY(20px);
-        background: #ffffff;
-        border: 1px solid #e0e0e0;
-        border-radius: 8px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-        z-index: 2147483646;
+        background: var(--color-bg-primary);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        box-shadow: var(--shadow-lg);
+        z-index: var(--z-error);
         font-family: ${fontFamily};
         display: flex;
         align-items: flex-start;
         gap: 12px;
-        padding: 16px 20px;
+        padding: var(--space-sm) 20px;
         min-width: 320px;
         max-width: 480px;
         opacity: 0;
-        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: all var(--transition-base);
       }
 
       .error-notification.error-active {
@@ -2807,14 +2607,14 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
         flex: 1;
         font-size: 0.95rem;
         line-height: 1.5;
-        color: #1a1a1a;
+        color: var(--color-text-primary);
         margin: 0;
       }
 
       .error-close {
         background: transparent;
         border: none;
-        color: #666;
+        color: var(--color-text-secondary);
         font-size: 1.5rem;
         line-height: 1;
         cursor: pointer;
@@ -2824,30 +2624,36 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
         display: flex;
         align-items: center;
         justify-content: center;
-        border-radius: 4px;
-        transition: all 0.15s ease;
+        border-radius: var(--radius-sm);
+        transition: all var(--transition-fast);
         flex-shrink: 0;
         font-family: ${fontFamily};
       }
 
       .error-close:hover {
-        background: #f0f0f0;
-        color: #1a1a1a;
+        background: var(--color-bg-hover);
+        color: var(--color-text-primary);
       }
+
+      /* Base button styles */
       .retry-button, .save-button {
-        display: block; margin: 24px auto 0; padding: 12px 24px;
-        background-color: #1a1a1a;
-        color: white;
+        display: block;
+        margin: var(--space-md) auto 0;
+        padding: 12px var(--space-md);
+        background-color: var(--button-bg);
+        color: var(--button-text);
         border: none;
-        border-radius: 4px;
-        cursor: pointer; font-size: 1rem; font-weight: 500;
-        transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        font-size: var(--font-size-base);
+        font-weight: var(--font-weight-normal);
+        font-family: ${fontFamily};
+        transition: all var(--transition-fast);
         letter-spacing: 0.02em;
       }
       .retry-button:hover, .save-button:hover:not(:disabled) {
-        background-color: #2a2a2a;
-        color: white;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+        background-color: var(--button-bg-hover);
+        box-shadow: var(--shadow-sm);
         transform: translateY(-1px);
       }
       .save-button:disabled {
@@ -2859,78 +2665,62 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
          Q&A SECTION
          ================================================================= */
       .question-section {
-        border-top: 1px solid #e8e8e8;
-        padding: 24px 40px;
+        border-top: 1px solid var(--color-border-light);
+        padding: var(--space-md) var(--space-xl);
         margin-top: 0;
-        background: #f8f8f8;
+        background: var(--section-bg);
       }
       .question-header {
-        font-weight: 600;
-        color: #1a1a1a;
+        font-weight: var(--font-weight-normal);
+        color: var(--color-text-primary);
         margin-bottom: 12px;
         font-size: 0.95rem;
       }
       .question-input-wrapper {
         display: flex;
         gap: 10px;
-        margin-bottom: 16px;
+        margin-bottom: var(--space-sm);
       }
       .question-input {
         flex: 1;
         padding: 10px 14px;
-        border: 1px solid #d8d8d8;
-        border-radius: 4px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
         font-family: ${fontFamily};
         font-size: 0.95rem;
-        transition: border-color 0.15s;
-        background: white;
-        color: #1a1a1a;
+        transition: border-color var(--transition-fast);
+        background: var(--color-bg-primary);
+        color: var(--color-text-primary);
+        outline: none;
       }
       .question-input:focus {
         outline: none;
-        border-color: #1a1a1a;
+        border-color: var(--input-focus-border);
+        box-shadow: none;
       }
       .question-input:disabled {
-        background: #f5f5f5;
-        color: #666;
+        background: var(--color-bg-hover);
+        color: var(--color-text-secondary);
         cursor: not-allowed;
       }
-      @media (prefers-color-scheme: light) {
-        .ask-button {
-          padding: 10px 20px;
-          background-color: #1a1a1a;
-          color: white;
-          border: none;
-          border-radius: 4px;
-          cursor: pointer;
-          font-family: ${fontFamily};
-          font-size: 0.95rem;
-          font-weight: 500;
-          transition: all 0.15s ease;
-          white-space: nowrap;
-        }
-        .ask-button:hover:not(:disabled) {
-          background-color: #2a2a2a;
-          color: white;
-        }
-      }
-
       .ask-button {
         padding: 10px 20px;
+        background-color: var(--button-bg);
+        color: var(--button-text);
         border: none;
-        border-radius: 4px;
+        border-radius: var(--radius-sm);
         cursor: pointer;
         font-family: ${fontFamily};
         font-size: 0.95rem;
-        font-weight: 500;
-        transition: all 0.15s ease;
+        font-weight: var(--font-weight-normal);
+        transition: all var(--transition-fast);
         white-space: nowrap;
         user-select: none;
         -webkit-user-select: none;
-        -moz-user-select: none;
-        -ms-user-select: none;
-        -webkit-touch-callout: none;
         -webkit-tap-highlight-color: transparent;
+      }
+      .ask-button:hover:not(:disabled) {
+        background-color: var(--button-bg-hover);
       }
       .ask-button:disabled {
         opacity: 0.6;
@@ -2940,24 +2730,24 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
         min-height: 40px;
       }
       .answer {
-        background: white;
-        padding: 16px;
-        border-radius: 4px;
-        border-left: 3px solid #1a1a1a;
-        line-height: 1.6;
+        background: var(--color-bg-primary);
+        padding: var(--space-sm);
+        border-radius: var(--radius-sm);
+        border-left: 3px solid var(--answer-border);
+        line-height: var(--line-height-normal);
       }
       .answer > p {
         margin-top: 0;
         margin-bottom: 1em;
       }
       .answer > p:first-child {
-        font-weight: 600;
-        color: #1a1a1a;
+        font-weight: var(--font-weight-semibold);
+        color: var(--color-text-primary);
         margin-bottom: 0.75em;
       }
       .answer strong {
-        color: #1a1a1a;
-        font-weight: 600;
+        color: var(--color-text-primary);
+        font-weight: var(--font-weight-semibold);
       }
       .answer-content {
         margin-top: 0.5em;
@@ -2965,7 +2755,7 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
       .answer-content p {
         margin-top: 0;
         margin-bottom: 1em;
-        line-height: 1.6;
+        line-height: var(--line-height-normal);
       }
       .answer-content ul {
         margin: 0.75em 0;
@@ -2980,24 +2770,24 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
          IMAGE GALLERY
          ================================================================= */
       .image-gallery {
-        padding: 24px 40px;
-        background: #f8f8f8;
-        border-top: 1px solid #e8e8e8;
+        padding: var(--space-md) var(--space-xl);
+        background: var(--section-bg);
+        border-top: 1px solid var(--color-border-light);
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
         gap: 12px;
       }
       .gallery-item {
         overflow: hidden;
-        border-radius: 4px;
-        background: #fff;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        border-radius: var(--radius-sm);
+        background: var(--color-bg-primary);
+        box-shadow: var(--shadow-sm);
         cursor: pointer;
-        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        transition: transform var(--transition-fast), box-shadow var(--transition-fast);
       }
       .gallery-item:hover {
         transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.12);
+        box-shadow: var(--shadow-md);
       }
       .gallery-item img {
         width: 100%;
@@ -3009,7 +2799,7 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
         display: flex;
         align-items: center;
         justify-content: center;
-        background: #f5f5f5;
+        background: var(--color-bg-hover);
         min-height: 200px;
       }
       .iframe-preview {
@@ -3017,16 +2807,16 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 8px;
-        color: #666;
+        gap: var(--space-xs);
+        color: var(--color-text-secondary);
       }
       .iframe-preview svg {
         width: 48px;
         height: 48px;
       }
       .iframe-preview span {
-        font-size: 14px;
-        font-weight: 500;
+        font-size: var(--font-size-sm);
+        font-weight: var(--font-weight-normal);
       }
 
       /* =================================================================
@@ -3038,8 +2828,8 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
         left: 0;
         width: 100%;
         height: 100%;
-        background: #ffffff;
-        z-index: 2147483647;
+        background: var(--color-bg-primary);
+        z-index: var(--z-lightbox);
         display: none;
         flex-direction: column;
         animation: fadeIn 0.3s ease-out;
@@ -3049,41 +2839,40 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
         justify-content: center;
         align-items: center;
         gap: 12px;
-        background: rgba(255, 255, 255, 0.98);
-        padding: 10px 24px;
-        border-top: 1px solid #f0f0f0;
+        background: var(--menubar-bg);
+        padding: 10px var(--space-md);
+        border-top: 1px solid var(--color-border-light);
         z-index: 10;
         backdrop-filter: blur(8px);
         flex-shrink: 0;
       }
       .lightbox-menubar .menubar-button {
         background: transparent;
-        border: 1px solid #e0e0e0;
+        border: 1px solid var(--color-border);
         font-family: ${fontFamily};
-        font-size: 1rem;
-        font-weight: 500;
-        color: #666;
+        font-size: var(--font-size-base);
+        font-weight: var(--font-weight-normal);
+        color: var(--color-text-secondary);
         cursor: pointer;
-        padding: 4px 8px;
-        border-radius: 4px;
-        transition: all 0.2s ease;
+        padding: 4px var(--space-xs);
+        border-radius: var(--radius-sm);
+        transition: all var(--transition-base);
       }
       .lightbox-menubar .menubar-button:hover:not(:disabled) {
-        background: #f5f5f5;
-        border-color: #d0d0d0;
-        color: #1a1a1a;
+        background: var(--color-bg-hover);
+        border-color: var(--color-border);
+        color: var(--color-text-primary);
       }
       .lightbox-menubar .menubar-button:disabled {
         opacity: 0.3;
         cursor: not-allowed;
-        border-color: #e0e0e0;
       }
       .lightbox-counter {
-        color: #666;
+        color: var(--color-text-secondary);
         padding: 4px 12px;
-        font-size: 1rem;
+        font-size: var(--font-size-base);
         font-family: ${fontFamily};
-        font-weight: 500;
+        font-weight: var(--font-weight-normal);
         margin: 0;
       }
       .lightbox-content {
@@ -3100,58 +2889,71 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
         object-fit: contain;
         user-select: none;
         -webkit-user-select: none;
-        -moz-user-select: none;
-        -ms-user-select: none;
       }
       .lightbox-iframe {
         width: 90vw;
         max-width: 1200px;
         height: 80vh;
         border: none;
-        background: #fff;
+        background: var(--color-bg-primary);
       }
 
       /* =================================================================
          DROPDOWN COMPONENTS
          ================================================================= */
-      .model-group { margin-bottom: 12px; }
+      .model-group {
+        margin-bottom: 12px;
+      }
       .group-header-container {
-        display: flex; align-items: center; justify-content: space-between;
-        padding: 10px 14px; background: #fafafa;
-        border-radius: 4px; margin-bottom: 6px;
-        border-left: 2px solid #e0e0e0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 14px;
+        background: var(--group-header-bg);
+        border-radius: var(--radius-sm);
+        margin-bottom: 6px;
+        border-left: 2px solid var(--color-border);
       }
       .group-header-text {
-        font-weight: 600; color: #1a1a1a; font-size: 1rem;
-        text-transform: none; letter-spacing: 0.08em;
+        font-weight: var(--font-weight-normal);
+        color: var(--color-text-secondary);
+        font-size: var(--font-size-base);
+        text-transform: none;
+        letter-spacing: 0.08em;
         flex-grow: 1;
       }
       .reset-key-link {
-        font-size: 1rem; color: #666; text-decoration: none;
+        font-size: var(--font-size-base);
+        color: var(--reset-link-color);
+        text-decoration: none;
         margin-left: 12px;
         white-space: nowrap;
         cursor: pointer;
-        transition: color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
-        font-weight: 500;
+        transition: color var(--transition-fast);
+        font-weight: var(--font-weight-normal);
       }
-      .reset-key-link:hover { color: #1a1a1a; }
+      .reset-key-link:hover {
+        color: var(--reset-link-hover);
+      }
       .model-item {
-        padding: 11px 14px; margin: 2px 0; border-radius: 4px;
-        transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
-        font-size: 1rem; cursor: pointer; color: #2a2a2a; display: block;
-        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-        font-weight: 400;
+        padding: 11px 14px;
+        margin: 2px 0;
+        border-radius: var(--radius-sm);
+        transition: all var(--transition-fast);
+        font-size: var(--font-size-base);
+        cursor: pointer;
+        color: var(--color-text-primary);
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: var(--font-weight-normal);
       }
       .model-item:hover {
-        background-color: #f5f5f5; color: #1a1a1a;
+        background-color: var(--color-bg-hover);
+        color: var(--color-text-primary);
         transform: translateX(2px);
       }
-      .add-model-item {
-         color: #666;
-         font-style: normal;
-         font-weight: 500;
-      }
-      .add-model-item:hover { background-color: #f0f0f0; color: #1a1a1a; }
 
       /* =================================================================
          LOADING & STATUS INDICATORS
@@ -3162,11 +2964,6 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
         font-family: ${fontFamily};
         font-weight: 400;
       }
-      span.article-excellent { color: #2ecc71; font-weight: bold; }
-      span.article-good      { color: #3498db; font-weight: bold; }
-      span.article-average   { color: #f39c12; font-weight: bold; }
-      span.article-bad       { color: #e74c3c; font-weight: bold; }
-      span.article-very-bad  { color: #c0392b; font-weight: bold; }
 
       /* =================================================================
          ANIMATIONS
@@ -3183,252 +2980,6 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
          to { transform: translateY(0); opacity: 1; }
       }
 
-      /* =================================================================
-         DARK MODE THEME
-         ================================================================= */
-      @media (prefers-color-scheme: dark) {
-        /* Custom Modal Dark Mode */
-        .modal-overlay.modal-active {
-          background: rgba(0, 0, 0, 0.6);
-        }
-
-        .modal-content {
-          background: #1a1a1a;
-          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-        }
-
-        .modal-message {
-          color: #e8e8e8;
-        }
-
-        .modal-input {
-          background: #2a2a2a;
-          border-color: #444;
-          color: #e8e8e8;
-        }
-
-        .modal-input:focus {
-          border-color: #666;
-          background: #333;
-        }
-
-        .modal-input::placeholder {
-          color: #777;
-        }
-
-        .modal-actions {
-          border-top-color: #2a2a2a;
-        }
-
-        .modal-button {
-          color: #999;
-        }
-
-        .modal-button:hover {
-          background: #2a2a2a;
-          color: #999;
-        }
-
-        .modal-button:active {
-          background: transparent;
-          color: #999;
-        }
-
-        .modal-button:focus {
-          outline: none !important;
-          box-shadow: none !important;
-          background: transparent;
-          color: #999;
-        }
-
-        .modal-button-primary {
-          color: #999;
-          font-weight: 500 !important;
-        }
-
-        .modal-button-primary:hover {
-          color: #999;
-          font-weight: 500 !important;
-        }
-
-        .modal-button-primary:active {
-          color: #999;
-          font-weight: 500 !important;
-        }
-
-        .modal-button-primary:focus {
-          outline: none !important;
-          box-shadow: none !important;
-          background: transparent;
-          color: #999;
-          font-weight: 500 !important;
-        }
-
-        .modal-button-secondary {
-          border-right-color: #2a2a2a;
-        }
-
-        /* Error Notification Dark Mode */
-        .error-notification {
-          background: #1a1a1a;
-          border-color: #333;
-          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-        }
-
-        .error-message {
-          color: #e8e8e8;
-        }
-
-        .error-close {
-          color: #999;
-        }
-
-        .error-close:hover {
-          background: #2a2a2a;
-          color: #e8e8e8;
-        }
-
-        #${CONFIG.ids.overlay} {
-          background-color: rgba(0, 0, 0, 0.6);
-        }
-        #${CONFIG.ids.button} {
-          background: #1a1a1a !important;
-          color: #ffffff;
-        }
-        #${CONFIG.ids.button}:hover {
-          background: #2a2a2a !important;
-        }
-        #${CONFIG.ids.content} {
-          background-color: #1a1a1a;
-          color: #e8e8e8;
-          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.4);
-        }
-        #${CONFIG.ids.content} *:not([class*="article-"]):not(.retry-button):not(.save-button):not(button) {
-          color: inherit !important;
-        }
-        #${CONFIG.ids.content} strong {
-          color: #f5f5f5;
-        }
-        #${CONFIG.ids.closeButton} {
-          color: #999;
-          background: #1a1a1a;
-        }
-        #${CONFIG.ids.closeButton}:hover {
-          color: #e8e8e8;
-          background: #2a2a2a;
-        }
-        .retry-button, .save-button,
-        #summarize-retry-button {
-          background-color: #e8e8e8 !important;
-          color: #1a1a1a !important;
-        }
-        .retry-button:hover, .save-button:hover:not(:disabled),
-        #summarize-retry-button:hover {
-          background-color: #f5f5f5 !important;
-          color: #1a1a1a !important;
-        }
-        #${CONFIG.ids.dropdown} { background: #1a1a1a; border-color: #333; }
-        .model-item { color: #d0d0d0; }
-        .model-item:hover { background-color: #2a2a2a; color: #e8e8e8; }
-        .group-header-container { background: #242424; border-left-color: #333; }
-        .group-header-text { color: #e8e8e8; }
-        .reset-key-link { color: #999; }
-        .reset-key-link:hover { color: #e8e8e8; }
-        .add-model-item { color: #999; }
-        .add-model-item:hover { background-color: #2a2a2a; color: #e8e8e8; }
-        hr { border-top-color: #333 !important; }
-        .summary-menubar {
-          background: rgba(26, 26, 26, 0.98);
-          border-top-color: #2a2a2a;
-        }
-        .menubar-button {
-          background: transparent;
-          border-color: #444;
-          color: #999;
-        }
-        .menubar-button:hover {
-          background: #2a2a2a;
-          border-color: #555;
-          color: #e8e8e8;
-        }
-        .question-section {
-          background: #1a1a1a;
-          border-top-color: #333;
-        }
-        .question-header {
-          color: #e8e8e8;
-        }
-        .question-input {
-          background: #2a2a2a;
-          border-color: #444;
-          color: #e8e8e8;
-        }
-        .question-input:focus {
-          border-color: #666;
-        }
-        .question-input:disabled {
-          background: #1a1a1a;
-          color: #666;
-        }
-        .ask-button {
-          background-color: #e8e8e8 !important;
-          color: #1a1a1a !important;
-        }
-        .ask-button:hover:not(:disabled) {
-          background-color: #ffffff !important;
-          color: #1a1a1a !important;
-        }
-        .answer {
-          background: #242424;
-          color: #e8e8e8;
-          border-left-color: #666;
-        }
-        .answer > p:first-child {
-          color: #e8e8e8;
-        }
-        .answer strong {
-          color: #e8e8e8;
-        }
-        .image-gallery {
-          background: #1a1a1a;
-          border-top-color: #333;
-        }
-        .gallery-item {
-          background: #242424;
-        }
-        .lightbox-overlay {
-          background: #1a1a1a;
-        }
-        .lightbox-menubar {
-          background: rgba(26, 26, 26, 0.98);
-          border-top-color: #2a2a2a;
-        }
-        .lightbox-menubar .menubar-button {
-          background: transparent;
-          border-color: #444;
-          color: #999;
-        }
-        .lightbox-menubar .menubar-button:hover:not(:disabled) {
-          background: #2a2a2a;
-          border-color: #555;
-          color: #e8e8e8;
-        }
-        .lightbox-menubar .menubar-button:disabled {
-          border-color: #444;
-        }
-        .lightbox-counter {
-          color: #999;
-        }
-        .gallery-item-iframe {
-          background: #242424;
-        }
-        .iframe-preview {
-          color: #999;
-        }
-        .lightbox-iframe {
-          background: #1a1a1a;
-        }
-      }
 
       /* =================================================================
          MOBILE RESPONSIVENESS
@@ -3547,36 +3098,6 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
          }
          .lightbox-content {
             padding: 10px;
-         }
-      }
-
-      /* =================================================================
-         MOBILE DARK MODE
-         ================================================================= */
-      @media (max-width: 600px) and (prefers-color-scheme: dark) {
-         .summary-menubar {
-            background: rgba(26, 26, 26, 0.98);
-            border-top-color: #2a2a2a;
-         }
-         .menubar-button {
-            background: transparent;
-            border-color: #444;
-            color: #999;
-         }
-         .menubar-button:hover {
-            background: #2a2a2a;
-            border-color: #555;
-            color: #e8e8e8;
-         }
-         .retry-button, .save-button,
-         #summarize-retry-button {
-            background-color: #e8e8e8 !important;
-            color: #1a1a1a !important;
-         }
-         .retry-button:hover, .save-button:hover:not(:disabled),
-         #summarize-retry-button:hover {
-            background-color: #f5f5f5 !important;
-            color: #1a1a1a !important;
          }
       }
     `);
