@@ -2,7 +2,7 @@
 // @name        Summarize with AI
 // @namespace   https://github.com/insign/userscripts
 // @version     2025.12.28.00
-// @description Single-button AI summarization (Claude) with model selection dropdown for articles/news. Uses Alt+S shortcut. Long press 'S' (or tap-and-hold on mobile) to select model. Allows adding custom models. Custom modals with Dieter Rams-inspired design. Adapts to dark mode and mobile viewports.
+// @description Single-button AI summarization (Claude & Gemini) with model selection dropdown for articles/news. Uses Alt+S shortcut. Long press 'S' (or tap-and-hold on mobile) to select model. Allows adding custom models. Custom modals with Dieter Rams-inspired design. Adapts to dark mode and mobile viewports.
 // @author      Hélio <open@helio.me>
 // @contributor Gokul SP (Personal fork maintainer)
 // @contributor Claude (Anthropic AI assistant)
@@ -17,6 +17,7 @@
 // @grant       GM.setValue
 // @grant       GM.getValue
 // @connect     api.anthropic.com
+// @connect     generativelanguage.googleapis.com
 // @require     https://cdnjs.cloudflare.com/ajax/libs/readability/0.6.0/Readability.min.js
 // @require     https://cdnjs.cloudflare.com/ajax/libs/readability/0.6.0/Readability-readerable.min.js
 // @downloadURL https://gokulsp.github.io/Summarize-with-AI/Summarize%20with%20AI.user.js
@@ -85,6 +86,14 @@
 				models: [{ id: 'claude-sonnet-4-5-20250929', name: 'Sonnet 4.5' }],
 				get defaultParams() {
 					return { max_tokens: CONFIG.limits.defaultMaxTokens };
+				},
+			},
+			gemini: {
+				name: 'Gemini',
+				baseUrl: 'https://generativelanguage.googleapis.com/v1beta/models',
+				models: [{ id: 'gemini-3-flash-preview', name: 'Flash 3.0' }],
+				get defaultParams() {
+					return {};
 				},
 			},
 		},
@@ -1491,17 +1500,22 @@ Format exactly as shown:
 
 	async function sendApiRequest(service, apiKey, payload, modelConfig, skipBuildBody = false) {
 		const group = CONFIG.modelGroups[service];
-		const url = group.baseUrl;
+		let url = group.baseUrl;
 
 		// If skipBuildBody is true, use payload directly (for Q&A feature)
 		// Otherwise, build the request body from title/content (for summarization)
-		const requestBody = skipBuildBody ? payload : buildRequestBody(payload, modelConfig);
+		const requestBody = skipBuildBody ? payload : buildRequestBody(payload, modelConfig, service);
+
+		// For Gemini, append model ID and API key to URL
+		if (service === 'gemini') {
+			url = `${url}/${modelConfig.id}:generateContent?key=${apiKey}`;
+		}
 
 		return new Promise((resolve, reject) => {
 			GM.xmlHttpRequest({
 				method: 'POST',
 				url,
-				headers: getHeaders(apiKey),
+				headers: getHeaders(apiKey, service),
 				data: JSON.stringify(requestBody),
 				responseType: 'json',
 				timeout: CONFIG.timing.apiRequestTimeout,
@@ -1512,6 +1526,7 @@ Format exactly as shown:
 						data:
 							typeof responseData === 'object' ? responseData : JSON.parse(responseData || '{}'),
 						statusText: response.statusText,
+						service, // Pass service for response handling
 					});
 				},
 				onerror: error =>
@@ -1561,7 +1576,7 @@ Format exactly as shown:
 	}
 
 	function handleApiResponse(response) {
-		const { status, data, statusText } = response;
+		const { status, data, statusText, service } = response;
 
 		if (status < 200 || status >= 300) {
 			const errorDetails =
@@ -1569,11 +1584,27 @@ Format exactly as shown:
 			throw new Error(`API Error (${status}): ${errorDetails}`);
 		}
 
-		const message = data?.content?.[0];
-		if (data?.stop_reason === 'max_tokens') {
-			console.warn('Summarize with AI: Summary may be incomplete (max token limit reached)');
+		let rawSummary = '';
+
+		// Extract text based on API provider
+		if (service === 'gemini') {
+			// Gemini response format: { candidates: [{ content: { parts: [{ text: "..." }] } }] }
+			const candidate = data?.candidates?.[0];
+			const part = candidate?.content?.parts?.[0];
+			rawSummary = part?.text || '';
+
+			// Check for finish reason
+			if (candidate?.finishReason === 'MAX_TOKENS') {
+				console.warn('Summarize with AI: Summary may be incomplete (max token limit reached)');
+			}
+		} else {
+			// Claude response format (default)
+			const message = data?.content?.[0];
+			if (data?.stop_reason === 'max_tokens') {
+				console.warn('Summarize with AI: Summary may be incomplete (max token limit reached)');
+			}
+			rawSummary = message?.text || '';
 		}
-		const rawSummary = message?.text || '';
 
 		if (!rawSummary && !data?.error) {
 			console.error('Summarize with AI: API Response Data:', data);
@@ -1597,9 +1628,25 @@ Format exactly as shown:
 		updateSummaryOverlay(cleanedSummary, false);
 	}
 
-	function buildRequestBody({ title, content }, modelConfig) {
+	function buildRequestBody({ title, content }, modelConfig, service) {
 		const systemPrompt = PROMPT_TEMPLATE(title, content);
 
+		if (service === 'gemini') {
+			// Gemini API format - REST API requires structured content format
+			return {
+				contents: [
+					{
+						parts: [
+							{
+								text: systemPrompt,
+							},
+						],
+					},
+				],
+			};
+		}
+
+		// Claude API format (default)
 		return {
 			model: modelConfig.id,
 			messages: [{ role: 'user', content: systemPrompt }],
@@ -1607,7 +1654,15 @@ Format exactly as shown:
 		};
 	}
 
-	function getHeaders(apiKey) {
+	function getHeaders(apiKey, service) {
+		if (service === 'gemini') {
+			// Gemini uses API key in URL, not headers
+			return {
+				'Content-Type': 'application/json',
+			};
+		}
+
+		// Claude headers (default)
 		return {
 			'Content-Type': 'application/json',
 			'x-api-key': apiKey,
