@@ -1169,6 +1169,9 @@ Format exactly as shown:
 			state.currentSummary = null;
 			state.articleImages = [];
 			state.articleData = null;
+
+			// Show the summary button again after closing overlay
+			if (dom.button) dom.button.style.display = 'flex';
 		}
 	}
 
@@ -1352,18 +1355,31 @@ Format exactly as shown:
 
 	async function processSummarization() {
 		try {
+			// Hide the summary button during summarization
+			if (dom.button) dom.button.style.display = 'none';
+
 			const articleData = await getValidatedArticleData();
-			if (!articleData) return;
+			if (!articleData) {
+				// Show button again if validation fails
+				if (dom.button) dom.button.style.display = 'flex';
+				return;
+			}
 
 			// Extract images from article
 			state.articleImages = await extractArticleImages();
 
 			const validationResult = await validateModelAndApiKey();
-			if (!validationResult) return;
+			if (!validationResult) {
+				// Show button again if validation fails
+				if (dom.button) dom.button.style.display = 'flex';
+				return;
+			}
 
 			await executeSummarization(articleData, validationResult);
 		} catch (error) {
 			handleSummarizationError(error);
+			// Show button again on error
+			if (dom.button) dom.button.style.display = 'flex';
 		}
 	}
 
