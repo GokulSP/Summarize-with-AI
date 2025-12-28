@@ -543,6 +543,7 @@ Format exactly as shown:
 		dropdownNeedsUpdate: true,
 		articleImages: [],
 		summaryCache: new Map(), // Cache summaries by model: modelId -> { articleData, images, summary }
+		selectedImages: new Set(), // Track selected images by index for sharing
 	};
 
 	const dom = {
@@ -1931,6 +1932,15 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
 	// --- Image Lightbox Functions ---
 	let currentImageIndex = 0;
 
+	// Helper function to detect Android
+	const isAndroidDevice = () => /Android/i.test(navigator.userAgent);
+
+	// Helper function to get share button text based on platform
+	const getShareButtonText = count => {
+		const actionText = isAndroidDevice() ? 'Share' : 'Copy';
+		return count === 0 ? `${actionText} Selected` : `${actionText} (${count})`;
+	};
+
 	function openLightbox(index) {
 		if (!state.articleImages.length) return;
 
@@ -1946,7 +1956,10 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
 				counter: dom.lightbox.querySelector('.lightbox-counter'),
 				prevBtn: dom.lightbox.querySelector('.lightbox-prev'),
 				nextBtn: dom.lightbox.querySelector('.lightbox-next'),
+				thumbnailStrip: dom.lightbox.querySelector('.lightbox-thumbnails'),
+				shareBtn: dom.lightbox.querySelector('.lightbox-share'),
 			};
+			renderThumbnails();
 		}
 
 		updateLightboxImage();
@@ -1965,8 +1978,9 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
 				dom.lightboxCleanup = null;
 			}
 
-			// Clear cached elements
+			// Clear cached elements and selections
 			dom.lightboxElements = null;
+			state.selectedImages.clear();
 		}
 	}
 
@@ -1995,6 +2009,11 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
 		lightboxContent.appendChild(img);
 		lightboxContent.appendChild(iframe);
 
+		// Create thumbnail strip
+		const thumbnailStrip = createElement('div', {
+			className: 'lightbox-thumbnails',
+		});
+
 		// Create menu bar at bottom (similar to summary overlay)
 		const menuBar = createElement('div', {
 			className: 'lightbox-menubar',
@@ -2016,6 +2035,13 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
 			onclick: () => navigateLightbox(1),
 		});
 
+		const shareBtn = createElement('button', {
+			className: 'menubar-button lightbox-share',
+			textContent: getShareButtonText(0),
+			title: isAndroidDevice() ? 'Share selected images' : 'Copy selected images to clipboard',
+			onclick: shareSelectedImages,
+		});
+
 		const closeBtn = createElement('button', {
 			className: 'menubar-button',
 			textContent: 'Close',
@@ -2026,9 +2052,11 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
 		menuBar.appendChild(prevBtn);
 		menuBar.appendChild(counter);
 		menuBar.appendChild(nextBtn);
+		menuBar.appendChild(shareBtn);
 		menuBar.appendChild(closeBtn);
 
 		dom.lightbox.appendChild(lightboxContent);
+		dom.lightbox.appendChild(thumbnailStrip);
 		dom.lightbox.appendChild(menuBar);
 		document.body.appendChild(dom.lightbox);
 
@@ -2039,7 +2067,12 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
 			counter,
 			prevBtn,
 			nextBtn,
+			thumbnailStrip,
+			shareBtn,
 		};
+
+		// Initialize thumbnails
+		renderThumbnails();
 
 		// Close on overlay click
 		const overlayClickHandler = e => {
@@ -2088,7 +2121,7 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
 	function updateLightboxImage() {
 		if (!dom.lightbox || !dom.lightboxElements || !state.articleImages.length) return;
 
-		const { img, iframe, counter, prevBtn, nextBtn } = dom.lightboxElements;
+		const { img, iframe, counter, prevBtn, nextBtn, thumbnailStrip } = dom.lightboxElements;
 		const currentItem = state.articleImages[currentImageIndex];
 		counter.textContent = `${currentImageIndex + 1} / ${state.articleImages.length}`;
 
@@ -2108,6 +2141,22 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
 		// Disable/enable buttons at boundaries
 		prevBtn.disabled = currentImageIndex === 0;
 		nextBtn.disabled = currentImageIndex === state.articleImages.length - 1;
+
+		// Update active thumbnail highlight
+		const thumbnails = thumbnailStrip.querySelectorAll('.lightbox-thumbnail-item');
+		thumbnails.forEach((thumb, idx) => {
+			if (idx === currentImageIndex) {
+				thumb.classList.add('active');
+			} else {
+				thumb.classList.remove('active');
+			}
+		});
+
+		// Scroll active thumbnail into view
+		const activeThumb = thumbnails[currentImageIndex];
+		if (activeThumb) {
+			activeThumb.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+		}
 	}
 
 	function navigateLightbox(direction) {
@@ -2115,6 +2164,125 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
 		if (newIndex >= 0 && newIndex < state.articleImages.length) {
 			currentImageIndex = newIndex;
 			updateLightboxImage();
+		}
+	}
+
+	function renderThumbnails() {
+		if (!dom.lightboxElements || !dom.lightboxElements.thumbnailStrip) return;
+
+		const { thumbnailStrip } = dom.lightboxElements;
+		thumbnailStrip.innerHTML = '';
+
+		state.articleImages.forEach((item, index) => {
+			const thumbItem = createElement('div', {
+				className: 'lightbox-thumbnail-item',
+			});
+
+			const isIframe = item.type === 'iframe';
+
+			// Create checkbox (disabled for iframes)
+			const checkbox = createElement('input', {
+				type: 'checkbox',
+				className: 'lightbox-thumbnail-checkbox',
+			});
+			checkbox.checked = state.selectedImages.has(index);
+			checkbox.disabled = isIframe; // Disable checkbox for iframes
+			if (!isIframe) {
+				checkbox.addEventListener('change', () => toggleImageSelection(index));
+			}
+
+			// Create thumbnail image or iframe indicator
+			let thumbContent;
+			if (isIframe) {
+				thumbContent = createElement('div', {
+					className: 'lightbox-thumbnail-iframe-indicator',
+					textContent: '🖼️',
+					title: 'Interactive content - Cannot be copied',
+				});
+			} else {
+				thumbContent = createElement('img', {
+					className: 'lightbox-thumbnail-img',
+					src: item.src,
+					alt: item.alt || `Image ${index + 1}`,
+				});
+			}
+
+			// Make thumbnail clickable to navigate
+			thumbContent.addEventListener('click', () => {
+				currentImageIndex = index;
+				updateLightboxImage();
+			});
+
+			thumbItem.appendChild(checkbox);
+			thumbItem.appendChild(thumbContent);
+			thumbnailStrip.appendChild(thumbItem);
+		});
+
+		updateShareButtonState();
+	}
+
+	function toggleImageSelection(index) {
+		if (state.selectedImages.has(index)) {
+			state.selectedImages.delete(index);
+		} else {
+			state.selectedImages.add(index);
+		}
+		updateShareButtonState();
+	}
+
+	function updateShareButtonState() {
+		if (!dom.lightboxElements || !dom.lightboxElements.shareBtn) return;
+
+		const { shareBtn } = dom.lightboxElements;
+		const count = state.selectedImages.size;
+
+		shareBtn.textContent = getShareButtonText(count);
+		shareBtn.disabled = count === 0;
+	}
+
+	async function shareSelectedImages() {
+		if (state.selectedImages.size === 0) {
+			showErrorNotification('Please select at least one image to share.');
+			return;
+		}
+
+		const selectedIndices = Array.from(state.selectedImages).sort((a, b) => a - b);
+		const selectedImages = selectedIndices.map(idx => state.articleImages[idx]);
+
+		try {
+			// On Android: Try Web Share API with actual image files
+			if (isAndroidDevice() && navigator.share && navigator.canShare) {
+				const files = [];
+
+				// Try to fetch and convert images to File objects
+				for (const img of selectedImages) {
+					try {
+						const response = await fetch(img.src);
+						const blob = await response.blob();
+						const file = new File([blob], `image-${Date.now()}.jpg`, { type: blob.type });
+						files.push(file);
+					} catch (error) {
+						console.warn('Failed to fetch image for sharing:', error);
+					}
+				}
+
+				if (files.length > 0 && navigator.canShare({ files })) {
+					await navigator.share({
+						files,
+						title: 'Shared Images',
+						text: `Sharing ${files.length} image(s)`,
+					});
+					return;
+				}
+			}
+
+			// On desktop: Copy image URLs
+			const imageUrls = selectedImages.map(item => item.src).join('\n');
+			await navigator.clipboard.writeText(imageUrls);
+			await ModalService.alert('Image links copied.');
+		} catch (error) {
+			console.error('Share failed:', error);
+			showErrorNotification('Failed to share images. Please try again.');
 		}
 	}
 
@@ -2936,6 +3104,78 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
         height: 80vh;
         border: none;
         background: var(--color-bg-primary);
+      }
+
+      /* Thumbnail Strip */
+      .lightbox-thumbnails {
+        display: flex;
+        justify-content: center;
+        gap: 8px;
+        padding: 12px var(--space-md);
+        background: var(--section-bg);
+        border-top: 1px solid var(--color-border-light);
+        overflow-x: auto;
+        overflow-y: hidden;
+        flex-shrink: 0;
+        max-height: 120px;
+        scrollbar-width: thin;
+        scrollbar-color: var(--color-border) transparent;
+      }
+      .lightbox-thumbnails::-webkit-scrollbar {
+        height: 6px;
+      }
+      .lightbox-thumbnails::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .lightbox-thumbnails::-webkit-scrollbar-thumb {
+        background: var(--color-border);
+        border-radius: 3px;
+      }
+      .lightbox-thumbnail-item {
+        position: relative;
+        flex-shrink: 0;
+        width: 80px;
+        height: 80px;
+        border: 2px solid transparent;
+        border-radius: var(--radius-sm);
+        overflow: hidden;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+        background: var(--color-bg-primary);
+      }
+      .lightbox-thumbnail-item.active {
+        border-color: var(--color-text-primary);
+        box-shadow: 0 0 0 1px var(--color-text-primary);
+      }
+      .lightbox-thumbnail-item:hover {
+        border-color: var(--color-border);
+        transform: scale(1.05);
+      }
+      .lightbox-thumbnail-img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .lightbox-thumbnail-iframe-indicator {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 32px;
+        background: var(--section-bg);
+        border: 1px solid var(--color-border);
+      }
+      .lightbox-thumbnail-checkbox {
+        position: absolute;
+        top: 4px;
+        left: 4px;
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+        z-index: 10;
+        accent-color: var(--color-text-primary);
       }
 
       /* =================================================================
