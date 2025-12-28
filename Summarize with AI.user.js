@@ -3370,10 +3370,14 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
          LOADING & STATUS INDICATORS
          ================================================================= */
       .glow {
-        text-align: center; padding: 40px 0;
+        text-align: center;
+        margin: 0;
+        padding: 0;
         animation: glow 2.5s ease-in-out infinite;
         font-family: ${fontFamily};
         font-weight: 400;
+        line-height: 1;
+        transform: translateY(1em);
       }
 
       /* =================================================================
