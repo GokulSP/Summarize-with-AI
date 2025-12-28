@@ -542,6 +542,7 @@ Format exactly as shown:
 		currentSummary: null,
 		dropdownNeedsUpdate: true,
 		articleImages: [],
+		summaryCache: new Map(), // Cache summaries by model: modelId -> { articleData, images, summary }
 	};
 
 	const dom = {
@@ -1165,10 +1166,10 @@ Format exactly as shown:
 			dom.overlayElements = null;
 			document.body.style.overflow = '';
 
-			// Memory cleanup: clear article data and images
+			// Memory cleanup: clear temporary display data
+			// Note: Keep state.articleData intact for re-summarization and cache lookup
 			state.currentSummary = null;
 			state.articleImages = [];
-			state.articleData = null;
 
 			// Show the summary button again after closing overlay
 			if (dom.button) dom.button.style.display = 'flex';
@@ -1365,15 +1366,30 @@ Format exactly as shown:
 				return;
 			}
 
-			// Extract images from article
-			state.articleImages = await extractArticleImages();
-
 			const validationResult = await validateModelAndApiKey();
 			if (!validationResult) {
 				// Show button again if validation fails
 				if (dom.button) dom.button.style.display = 'flex';
 				return;
 			}
+
+			const { modelConfig } = validationResult;
+
+			// Check cache first - use cached summary if available for this model
+			const cachedData = state.summaryCache.get(modelConfig.id);
+			if (cachedData) {
+				// Restore from cache
+				state.articleData = cachedData.articleData;
+				state.articleImages = cachedData.images;
+				state.currentSummary = cachedData.summary;
+
+				// Show cached summary immediately
+				showSummaryOverlay(cachedData.summary.content);
+				return;
+			}
+
+			// No cache - extract images and generate new summary
+			state.articleImages = await extractArticleImages();
 
 			await executeSummarization(articleData, validationResult);
 		} catch (error) {
@@ -1531,6 +1547,14 @@ Format exactly as shown:
 			content: cleanedSummary,
 			timestamp: new Date().toISOString(),
 		};
+
+		// Cache the summary with article data and images for this model
+		state.summaryCache.set(state.activeModel, {
+			articleData: state.articleData,
+			images: state.articleImages,
+			summary: state.currentSummary,
+		});
+
 		updateSummaryOverlay(cleanedSummary, false);
 	}
 
