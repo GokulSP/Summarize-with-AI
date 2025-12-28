@@ -662,7 +662,7 @@ Format exactly as shown:
               </div>`);
 					} else {
 						galleryItems.push(`<div class="gallery-item" data-image-index="${i}">
-                <img src="${item.src}" alt="${item.alt || 'Article image'}" loading="lazy" />
+                <img src="${item.src}" alt="${item.alt || 'Article image'}" loading="lazy" decoding="async" />
               </div>`);
 					}
 				}
@@ -709,6 +709,38 @@ Format exactly as shown:
 		const questionInput = contentElement.querySelector(`#${CONFIG.ids.questionInput}`);
 		const answerContainer = contentElement.querySelector('#answer-container');
 
+		// Create handler functions that can be removed later
+		const handlers = {
+			close: () => closeOverlay(),
+			retry: () => processSummarization(),
+			copy: () => handleCopySummary(),
+			ask: () => handleAskQuestion(),
+			keypress: e => {
+				if (e.key === 'Enter') handleAskQuestion();
+			},
+			galleryClick: e => {
+				const galleryItem = e.target.closest('.gallery-item');
+				if (galleryItem?.dataset.imageIndex) {
+					const index = parseInt(galleryItem.dataset.imageIndex, 10);
+					openLightbox(index);
+				}
+			},
+		};
+
+		// Attach event listeners
+		if (closeBtn) closeBtn.addEventListener('click', handlers.close);
+		if (retryBtn) retryBtn.addEventListener('click', handlers.retry);
+		if (copyBtn) copyBtn.addEventListener('click', handlers.copy);
+		if (askBtn) askBtn.addEventListener('click', handlers.ask);
+		if (questionInput) questionInput.addEventListener('keypress', handlers.keypress);
+
+		// Optimize: Use event delegation instead of attaching handlers to each item
+		const imageGallery = contentElement.querySelector('.image-gallery');
+		if (imageGallery && !imageGallery.dataset.hasListener) {
+			imageGallery.dataset.hasListener = 'true';
+			imageGallery.addEventListener('click', handlers.galleryClick);
+		}
+
 		// Cache elements for reuse
 		dom.overlayElements = {
 			closeBtn,
@@ -717,30 +749,21 @@ Format exactly as shown:
 			askBtn,
 			questionInput,
 			answerContainer,
+			imageGallery,
 		};
 
-		if (closeBtn) closeBtn.onclick = closeOverlay;
-		if (retryBtn) retryBtn.addEventListener('click', processSummarization);
-		if (copyBtn) copyBtn.addEventListener('click', handleCopySummary);
-		if (askBtn) askBtn.addEventListener('click', handleAskQuestion);
-		if (questionInput) {
-			questionInput.addEventListener('keypress', e => {
-				if (e.key === 'Enter') handleAskQuestion();
-			});
-		}
-
-		// Optimize: Use event delegation instead of attaching handlers to each item
-		const imageGallery = contentElement.querySelector('.image-gallery');
-		if (imageGallery && !imageGallery.dataset.hasListener) {
-			imageGallery.dataset.hasListener = 'true';
-			imageGallery.addEventListener('click', e => {
-				const galleryItem = e.target.closest('.gallery-item');
-				if (galleryItem?.dataset.imageIndex) {
-					const index = parseInt(galleryItem.dataset.imageIndex, 10);
-					openLightbox(index);
-				}
-			});
-		}
+		// Return cleanup function to remove all event listeners
+		return () => {
+			if (closeBtn) closeBtn.removeEventListener('click', handlers.close);
+			if (retryBtn) retryBtn.removeEventListener('click', handlers.retry);
+			if (copyBtn) copyBtn.removeEventListener('click', handlers.copy);
+			if (askBtn) askBtn.removeEventListener('click', handlers.ask);
+			if (questionInput) questionInput.removeEventListener('keypress', handlers.keypress);
+			if (imageGallery) {
+				imageGallery.removeEventListener('click', handlers.galleryClick);
+				delete imageGallery.dataset.hasListener;
+			}
+		};
 	};
 
 	// --- Main Functions ---
@@ -1156,12 +1179,19 @@ Format exactly as shown:
 		document.body.appendChild(dom.overlay);
 		document.body.style.overflow = 'hidden';
 
-		attachOverlayHandlers();
+		// Store cleanup function for proper event listener removal
+		dom.overlayCleanup = attachOverlayHandlers();
 		dom.overlay.onclick = e => e.target === dom.overlay && closeOverlay();
 	}
 
 	function closeOverlay() {
 		if (dom.overlay) {
+			// Cleanup event listeners before removing overlay
+			if (dom.overlayCleanup) {
+				dom.overlayCleanup();
+				dom.overlayCleanup = null;
+			}
+
 			dom.overlay.remove();
 			dom.overlay = null;
 			dom.overlayElements = null;
@@ -1180,8 +1210,16 @@ Format exactly as shown:
 	function updateSummaryOverlay(contentHTML, isError = false) {
 		const contentDiv = document.getElementById(CONFIG.ids.content);
 		if (contentDiv) {
+			// Cleanup old event listeners before updating content
+			if (dom.overlayCleanup) {
+				dom.overlayCleanup();
+				dom.overlayCleanup = null;
+			}
+
 			contentDiv.innerHTML = buildOverlayContent(contentHTML, isError);
-			attachOverlayHandlers();
+
+			// Reattach handlers with new cleanup function
+			dom.overlayCleanup = attachOverlayHandlers();
 		}
 	}
 
@@ -2251,35 +2289,73 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
 
 		try {
 			// On Android: Try Web Share API with actual image files
-			if (isAndroidDevice() && navigator.share && navigator.canShare) {
+			if (isAndroidDevice() && navigator.share) {
 				const files = [];
 
-				// Try to fetch and convert images to File objects
+				// Try to fetch and convert images to File objects with timeout
 				for (const img of selectedImages) {
 					try {
-						const response = await fetch(img.src);
+						// Fetch with timeout and CORS handling
+						const controller = new AbortController();
+						const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+						const response = await fetch(img.src, {
+							mode: 'cors',
+							credentials: 'omit',
+							signal: controller.signal,
+						});
+						clearTimeout(timeoutId);
+
+						if (!response.ok) {
+							throw new Error(`HTTP ${response.status}`);
+						}
+
 						const blob = await response.blob();
-						const file = new File([blob], `image-${Date.now()}.jpg`, { type: blob.type });
+						const file = new File([blob], `image-${Date.now()}.jpg`, {
+							type: blob.type || 'image/jpeg',
+						});
 						files.push(file);
 					} catch (error) {
-						console.warn('Failed to fetch image for sharing:', error);
+						console.warn('Failed to fetch image for sharing:', error.message);
+						// Continue with remaining images
 					}
 				}
 
-				if (files.length > 0 && navigator.canShare({ files })) {
-					await navigator.share({
-						files,
-						title: 'Shared Images',
-						text: `Sharing ${files.length} image(s)`,
-					});
-					return;
+				// Check if files can be shared (with fallback if canShare doesn't exist)
+				const canShare =
+					typeof navigator.canShare === 'function'
+						? navigator.canShare({ files })
+						: files.length > 0;
+
+				if (files.length > 0 && canShare) {
+					try {
+						await navigator.share({
+							files,
+							title: 'Shared Images',
+							text: `Sharing ${files.length} image(s)`,
+						});
+						return; // Successfully shared, exit function
+					} catch (shareError) {
+						// User cancelled or share failed
+						if (shareError.name === 'AbortError') {
+							// User cancelled the share, don't show error
+							console.log('Share cancelled by user');
+							return;
+						}
+						// Other share errors, fall through to copy URLs fallback
+						console.warn('Share failed, falling back to copy:', shareError);
+					}
 				}
 			}
 
-			// On desktop: Copy image URLs
+			// Fallback: Copy image URLs (works on all platforms)
 			const imageUrls = selectedImages.map(item => item.src).join('\n');
-			await navigator.clipboard.writeText(imageUrls);
-			await ModalService.alert('Image links copied.');
+			if (navigator.clipboard?.writeText) {
+				await navigator.clipboard.writeText(imageUrls);
+				await ModalService.alert('Image links copied.');
+			} else {
+				throw new Error('Clipboard API not available');
+			}
 		} catch (error) {
 			console.error('Share failed:', error);
 			showErrorNotification('Failed to share images. Please try again.');
