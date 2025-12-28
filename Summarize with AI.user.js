@@ -2825,7 +2825,7 @@ Format your answer to clearly show: [From Article] ... [Expert Context] ... (if 
         color: var(--color-text-primary);
         padding: 0;
         box-shadow: var(--shadow-lg);
-        max-width: 680px; width: 90%; max-height: 85vh;
+        max-width: 680px; width: 90%; max-height: 90vh; min-height: 90vh;
         overflow-y: auto;
         position: relative;
         font-size: var(--font-size-base);
