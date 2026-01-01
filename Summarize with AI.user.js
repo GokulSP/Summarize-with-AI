@@ -2169,7 +2169,6 @@ Format requirements:
 		});
 	}
 
-
 	function handleLightboxKeyboard(e) {
 		if (!dom.lightbox || dom.lightbox.style.display === 'none') return;
 
@@ -2285,6 +2284,8 @@ Format requirements:
         --group-header-bg: #fafafa;
         --menubar-bg: rgba(255, 255, 255, 0.98);
         --section-bg: #f8f8f8;
+        --reset-link-color: #666;
+        --reset-link-hover: #1a1a1a;
 
         /* Spacing Scale (based on 4px grid) */
         --space-xs: 8px;
@@ -2348,6 +2349,8 @@ Format requirements:
           --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
           --shadow-button: 0 2px 8px rgba(0, 0, 0, 0.3);
           --shadow-button-hover: 0 4px 12px rgba(0, 0, 0, 0.4);
+          --reset-link-color: #999;
+          --reset-link-hover: #e8e8e8;
         }
       }
 
@@ -3111,7 +3114,7 @@ Format requirements:
         transition: all var(--transition-fast);
         font-size: var(--font-size-base);
         cursor: pointer;
-        color: var(--color-text-primary);
+        color: var(--color-text-secondary);
         display: block;
         overflow: hidden;
         text-overflow: ellipsis;
