@@ -35,7 +35,6 @@
 			content: 'summarize-content',
 			error: 'summarize-error',
 			retryButton: 'summarize-retry-button',
-			copyButton: 'summarize-copy-button',
 			askButton: 'summarize-ask-button',
 			questionInput: 'summarize-question-input',
 			questionSection: 'summarize-question-section',
@@ -53,11 +52,9 @@
 			apiRequestTimeout: 60000,
 			errorNotificationDuration: 4000,
 			focusDebounceDelay: 50,
-			copySuccessDisplay: 2000,
 			modalFocusDelay: 100,
 			modalCloseTransition: 200,
 			errorFadeOut: 200,
-			copyFallbackDelay: 50,
 			scrollStepDelay: 100,
 			scrollBottomDelay: 300,
 			scrollRestoreDelay: 200,
@@ -552,7 +549,6 @@ Format exactly as shown:
 		dropdownNeedsUpdate: true,
 		articleImages: [],
 		summaryCache: new Map(), // Cache summaries by model: modelId -> { articleData, images, summary }
-		selectedImages: new Set(), // Track selected images by index for sharing
 	};
 
 	const dom = {
@@ -696,9 +692,6 @@ Format exactly as shown:
 
 		// Add menu bar at the bottom
 		html += `<div class="summary-menubar">`;
-		if (!hasError && !contentHTML.includes('glow')) {
-			html += `<button id="${CONFIG.ids.copyButton}" class="menubar-button">Copy Summary</button>`;
-		}
 		html += `<button id="${CONFIG.ids.closeButton}" class="menubar-button" title="Close (Esc)">Close</button></div>`;
 
 		return html;
@@ -713,7 +706,6 @@ Format exactly as shown:
 		// Use querySelector on parent instead of multiple getElementById calls
 		const closeBtn = contentElement.querySelector(`#${CONFIG.ids.closeButton}`);
 		const retryBtn = contentElement.querySelector(`#${CONFIG.ids.retryButton}`);
-		const copyBtn = contentElement.querySelector(`#${CONFIG.ids.copyButton}`);
 		const askBtn = contentElement.querySelector(`#${CONFIG.ids.askButton}`);
 		const questionInput = contentElement.querySelector(`#${CONFIG.ids.questionInput}`);
 		const answerContainer = contentElement.querySelector('#answer-container');
@@ -722,7 +714,6 @@ Format exactly as shown:
 		const handlers = {
 			close: () => closeOverlay(),
 			retry: () => processSummarization(),
-			copy: () => handleCopySummary(),
 			ask: () => handleAskQuestion(),
 			keypress: e => {
 				if (e.key === 'Enter') handleAskQuestion();
@@ -739,7 +730,6 @@ Format exactly as shown:
 		// Attach event listeners
 		if (closeBtn) closeBtn.addEventListener('click', handlers.close);
 		if (retryBtn) retryBtn.addEventListener('click', handlers.retry);
-		if (copyBtn) copyBtn.addEventListener('click', handlers.copy);
 		if (askBtn) askBtn.addEventListener('click', handlers.ask);
 		if (questionInput) questionInput.addEventListener('keypress', handlers.keypress);
 
@@ -754,7 +744,6 @@ Format exactly as shown:
 		dom.overlayElements = {
 			closeBtn,
 			retryBtn,
-			copyBtn,
 			askBtn,
 			questionInput,
 			answerContainer,
@@ -765,7 +754,6 @@ Format exactly as shown:
 		return () => {
 			if (closeBtn) closeBtn.removeEventListener('click', handlers.close);
 			if (retryBtn) retryBtn.removeEventListener('click', handlers.retry);
-			if (copyBtn) copyBtn.removeEventListener('click', handlers.copy);
 			if (askBtn) askBtn.removeEventListener('click', handlers.ask);
 			if (questionInput) questionInput.removeEventListener('keypress', handlers.keypress);
 			if (imageGallery) {
@@ -1693,172 +1681,6 @@ Format exactly as shown:
 		}
 	}
 
-	// --- Save Summary Functionality ---
-	function handleCopySummary() {
-		if (!state.currentSummary) {
-			showErrorNotification('No summary to copy. Please generate a summary first.');
-			return;
-		}
-
-		UIHelpers.setButtonState(CONFIG.ids.copyButton, 'Copying...', true);
-
-		copyToClipboard(state.currentSummary.content)
-			.then(() => showCopySuccess())
-			.catch(error => showCopyError(error));
-	}
-
-	async function copyToClipboard(htmlContent) {
-		// Always try modern Clipboard API first - it bypasses copy event listeners completely
-		try {
-			// Store reference to native clipboard API to prevent interference
-			const nativeClipboard = Object.getOwnPropertyDescriptor(Navigator.prototype, 'clipboard');
-			const clipboardAPI = nativeClipboard
-				? nativeClipboard.get.call(navigator)
-				: navigator.clipboard;
-
-			// Check if clipboard API is available and has write method
-			if (clipboardAPI && typeof clipboardAPI.write === 'function') {
-				const parser = new DOMParser();
-				const doc = parser.parseFromString(htmlContent, 'text/html');
-				const textContent = doc.body.textContent || doc.body.innerText || '';
-
-				const htmlBlob = new Blob([htmlContent], { type: 'text/html' });
-				const textBlob = new Blob([textContent], { type: 'text/plain' });
-
-				await clipboardAPI.write([
-					new ClipboardItem({
-						'text/html': htmlBlob,
-						'text/plain': textBlob,
-					}),
-				]);
-				return;
-			}
-		} catch (error) {
-			console.warn('Clipboard API with HTML failed, trying fallback:', error);
-		}
-
-		// Fallback for browsers without Clipboard API support
-		return copyWithFallback(htmlContent);
-	}
-
-	function copyWithFallback(htmlContent) {
-		// Use hidden contenteditable div for mobile browsers
-		// Let the browser naturally handle HTML formatting (critical for Firefox Mobile)
-		return new Promise((resolve, reject) => {
-			// Store references to native APIs to prevent website interference
-			const nativeExecCommand = Document.prototype.execCommand;
-			const nativeGetSelection = Window.prototype.getSelection || (() => window.getSelection());
-			const nativeCreateRange = Document.prototype.createRange;
-			const nativeCreateElement = Document.prototype.createElement;
-			const nativeAppendChild = Element.prototype.appendChild;
-			const nativeRemove = Element.prototype.remove;
-			const nativeFocus = HTMLElement.prototype.focus;
-			const nativeAddEventListener = EventTarget.prototype.addEventListener;
-
-			const tempDiv = nativeCreateElement.call(document, 'div');
-			tempDiv.contentEditable = 'true';
-			// Enhanced styling to prevent interference and ensure selectability
-			tempDiv.style.cssText =
-				'position:fixed!important;left:-9999px!important;top:0!important;opacity:0.01!important;width:1px!important;height:1px!important;overflow:hidden!important;user-select:text!important;-webkit-user-select:text!important;-moz-user-select:text!important;-ms-user-select:text!important;pointer-events:none!important;z-index:2147483647!important;';
-			tempDiv.innerHTML = htmlContent;
-
-			// Mark element to prevent removal by page scripts
-			tempDiv.setAttribute('data-userscript-clipboard', 'true');
-
-			// Block copy event propagation to prevent site interference (e.g., FT.com adding attribution)
-			let copyEventBlocker = null;
-
-			const cleanup = () => {
-				try {
-					const sel = nativeGetSelection.call(window);
-					sel?.removeAllRanges?.();
-					if (copyEventBlocker) {
-						document.removeEventListener('copy', copyEventBlocker, true);
-					}
-					if (tempDiv.parentNode) {
-						nativeRemove.call(tempDiv);
-					}
-				} catch (e) {
-					console.error('Cleanup error:', e);
-				}
-			};
-
-			try {
-				// Install copy event blocker before adding element to DOM
-				copyEventBlocker = e => {
-					// Only block if the event is coming from our temp div
-					if (e.target === tempDiv || tempDiv.contains(e.target)) {
-						e.stopImmediatePropagation();
-						e.stopPropagation();
-					}
-				};
-				// Use capture phase with native addEventListener to intercept before page handlers
-				nativeAddEventListener.call(document, 'copy', copyEventBlocker, true);
-
-				nativeAppendChild.call(document.body, tempDiv);
-				nativeFocus.call(tempDiv);
-
-				const range = nativeCreateRange.call(document);
-				range.selectNodeContents(tempDiv);
-				const selection = nativeGetSelection.call(window);
-
-				if (!selection) {
-					throw new Error('Selection API not available');
-				}
-
-				selection.removeAllRanges();
-				selection.addRange(range);
-
-				// Small delay to ensure selection is fully registered
-				setTimeout(() => {
-					try {
-						// Verify element and selection still exist (protection against interference)
-						if (!tempDiv.parentNode) {
-							cleanup();
-							reject(new Error('Temporary element was removed by page'));
-							return;
-						}
-
-						const currentSelection = nativeGetSelection.call(window);
-						if (!currentSelection || currentSelection.rangeCount === 0) {
-							cleanup();
-							reject(new Error('Selection was cleared by page'));
-							return;
-						}
-
-						const successful = nativeExecCommand.call(document, 'copy');
-						cleanup();
-
-						if (successful) {
-							resolve();
-						} else {
-							reject(new Error('Copy command failed'));
-						}
-					} catch (error) {
-						cleanup();
-						reject(error);
-					}
-				}, 50);
-			} catch (error) {
-				cleanup();
-				reject(error);
-			}
-		});
-	}
-
-	function showCopySuccess() {
-		UIHelpers.setButtonState(CONFIG.ids.copyButton, 'Copied ✓', false);
-		setTimeout(() => {
-			UIHelpers.setButtonState(CONFIG.ids.copyButton, 'Copy Summary', false);
-		}, CONFIG.timing.copySuccessDisplay);
-	}
-
-	function showCopyError(error) {
-		console.error('Copy to clipboard failed:', error);
-		UIHelpers.setButtonState(CONFIG.ids.copyButton, 'Copy Summary', false);
-		showErrorNotification(`Failed to copy: ${error.message}`);
-	}
-
 	// --- Q&A Functionality ---
 	function formatQAAnswer(text) {
 		// Escape HTML first
@@ -2091,15 +1913,6 @@ Format requirements:
 	// --- Image Lightbox Functions ---
 	let currentImageIndex = 0;
 
-	// Helper function to detect Android
-	const isAndroidDevice = () => /Android/i.test(navigator.userAgent);
-
-	// Helper function to get share button text based on platform
-	const getShareButtonText = count => {
-		const actionText = isAndroidDevice() ? 'Share' : 'Copy';
-		return count === 0 ? `${actionText} Selected` : `${actionText} (${count})`;
-	};
-
 	function openLightbox(index) {
 		if (!state.articleImages.length) return;
 
@@ -2137,9 +1950,8 @@ Format requirements:
 				dom.lightboxCleanup = null;
 			}
 
-			// Clear cached elements and selections
+			// Clear cached elements
 			dom.lightboxElements = null;
-			state.selectedImages.clear();
 		}
 	}
 
@@ -2194,13 +2006,6 @@ Format requirements:
 			onclick: () => navigateLightbox(1),
 		});
 
-		const shareBtn = createElement('button', {
-			className: 'menubar-button lightbox-share',
-			textContent: getShareButtonText(0),
-			title: isAndroidDevice() ? 'Share selected images' : 'Copy selected images to clipboard',
-			onclick: shareSelectedImages,
-		});
-
 		const closeBtn = createElement('button', {
 			className: 'menubar-button',
 			textContent: 'Close',
@@ -2211,7 +2016,6 @@ Format requirements:
 		menuBar.appendChild(prevBtn);
 		menuBar.appendChild(counter);
 		menuBar.appendChild(nextBtn);
-		menuBar.appendChild(shareBtn);
 		menuBar.appendChild(closeBtn);
 
 		dom.lightbox.appendChild(lightboxContent);
@@ -2227,7 +2031,6 @@ Format requirements:
 			prevBtn,
 			nextBtn,
 			thumbnailStrip,
-			shareBtn,
 		};
 
 		// Initialize thumbnails
@@ -2339,24 +2142,13 @@ Format requirements:
 
 			const isIframe = item.type === 'iframe';
 
-			// Create checkbox (disabled for iframes)
-			const checkbox = createElement('input', {
-				type: 'checkbox',
-				className: 'lightbox-thumbnail-checkbox',
-			});
-			checkbox.checked = state.selectedImages.has(index);
-			checkbox.disabled = isIframe; // Disable checkbox for iframes
-			if (!isIframe) {
-				checkbox.addEventListener('change', () => toggleImageSelection(index));
-			}
-
 			// Create thumbnail image or iframe indicator
 			let thumbContent;
 			if (isIframe) {
 				thumbContent = createElement('div', {
 					className: 'lightbox-thumbnail-iframe-indicator',
 					textContent: '🖼️',
-					title: 'Interactive content - Cannot be copied',
+					title: 'Interactive content',
 				});
 			} else {
 				thumbContent = createElement('img', {
@@ -2372,116 +2164,11 @@ Format requirements:
 				updateLightboxImage();
 			});
 
-			thumbItem.appendChild(checkbox);
 			thumbItem.appendChild(thumbContent);
 			thumbnailStrip.appendChild(thumbItem);
 		});
-
-		updateShareButtonState();
 	}
 
-	function toggleImageSelection(index) {
-		if (state.selectedImages.has(index)) {
-			state.selectedImages.delete(index);
-		} else {
-			state.selectedImages.add(index);
-		}
-		updateShareButtonState();
-	}
-
-	function updateShareButtonState() {
-		if (!dom.lightboxElements || !dom.lightboxElements.shareBtn) return;
-
-		const { shareBtn } = dom.lightboxElements;
-		const count = state.selectedImages.size;
-
-		shareBtn.textContent = getShareButtonText(count);
-		shareBtn.disabled = count === 0;
-	}
-
-	async function shareSelectedImages() {
-		if (state.selectedImages.size === 0) {
-			showErrorNotification('Please select at least one image to share.');
-			return;
-		}
-
-		const selectedIndices = Array.from(state.selectedImages).sort((a, b) => a - b);
-		const selectedImages = selectedIndices.map(idx => state.articleImages[idx]);
-
-		try {
-			// On Android: Try Web Share API with actual image files
-			if (isAndroidDevice() && navigator.share) {
-				const files = [];
-
-				// Try to fetch and convert images to File objects with timeout
-				for (const img of selectedImages) {
-					try {
-						// Fetch with timeout and CORS handling
-						const controller = new AbortController();
-						const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-						const response = await fetch(img.src, {
-							mode: 'cors',
-							credentials: 'omit',
-							signal: controller.signal,
-						});
-						clearTimeout(timeoutId);
-
-						if (!response.ok) {
-							throw new Error(`HTTP ${response.status}`);
-						}
-
-						const blob = await response.blob();
-						const file = new File([blob], `image-${Date.now()}.jpg`, {
-							type: blob.type || 'image/jpeg',
-						});
-						files.push(file);
-					} catch (error) {
-						console.warn('Failed to fetch image for sharing:', error.message);
-						// Continue with remaining images
-					}
-				}
-
-				// Check if files can be shared (with fallback if canShare doesn't exist)
-				const canShare =
-					typeof navigator.canShare === 'function'
-						? navigator.canShare({ files })
-						: files.length > 0;
-
-				if (files.length > 0 && canShare) {
-					try {
-						await navigator.share({
-							files,
-							title: 'Shared Images',
-							text: `Sharing ${files.length} image(s)`,
-						});
-						return; // Successfully shared, exit function
-					} catch (shareError) {
-						// User cancelled or share failed
-						if (shareError.name === 'AbortError') {
-							// User cancelled the share, don't show error
-							console.log('Share cancelled by user');
-							return;
-						}
-						// Other share errors, fall through to copy URLs fallback
-						console.warn('Share failed, falling back to copy:', shareError);
-					}
-				}
-			}
-
-			// Fallback: Copy image URLs (works on all platforms)
-			const imageUrls = selectedImages.map(item => item.src).join('\n');
-			if (navigator.clipboard?.writeText) {
-				await navigator.clipboard.writeText(imageUrls);
-				await ModalService.alert('Image links copied.');
-			} else {
-				throw new Error('Clipboard API not available');
-			}
-		} catch (error) {
-			console.error('Share failed:', error);
-			showErrorNotification('Failed to share images. Please try again.');
-		}
-	}
 
 	function handleLightboxKeyboard(e) {
 		if (!dom.lightbox || dom.lightbox.style.display === 'none') return;
@@ -2845,8 +2532,8 @@ Format requirements:
       #${CONFIG.ids.button} {
         position: fixed; bottom: 24px; right: 24px;
         width: 56px; height: 56px;
-        background: var(--button-bg);
-        color: var(--button-text);
+        background: #1A73E8;
+        color: #ffffff;
         font-size: 1rem; font-weight: var(--font-weight-normal);
         font-family: ${fontFamily};
         border-radius: 50%; cursor: pointer; z-index: var(--z-button);
@@ -2860,7 +2547,7 @@ Format requirements:
         border: none;
       }
       #${CONFIG.ids.button}:hover {
-        background: var(--button-bg-hover);
+        background: #1976D2;
         box-shadow: var(--shadow-button-hover);
         transform: translateY(-1px);
       }
@@ -3380,17 +3067,6 @@ Format requirements:
         background: var(--section-bg);
         border: 1px solid var(--color-border);
       }
-      .lightbox-thumbnail-checkbox {
-        position: absolute;
-        top: 4px;
-        left: 4px;
-        width: 18px;
-        height: 18px;
-        cursor: pointer;
-        z-index: 10;
-        accent-color: var(--color-text-primary);
-      }
-
       /* =================================================================
          DROPDOWN COMPONENTS
          ================================================================= */
