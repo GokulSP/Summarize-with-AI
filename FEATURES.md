@@ -51,7 +51,36 @@ This document provides detailed information about all features in Summarize with
 
 ---
 
-### 2. Q&A System
+### 2. Multiple AI Service Support
+
+**Description**: Support for both Claude (Anthropic) and Gemini (Google) AI services with seamless switching.
+
+**Supported Services**:
+- **Claude API (Anthropic)**
+  - Model: Claude Sonnet 4.5 (claude-sonnet-4-5-20250929)
+  - API endpoint: https://api.anthropic.com/v1/messages
+  - Max tokens: 1000 (configurable)
+
+- **Google Gemini API**
+  - Model: Gemini 3.0 Flash (gemini-3-flash-preview)
+  - API endpoint: https://generativelanguage.googleapis.com/v1beta/models
+  - Free tier available with rate limits
+
+**Features**:
+- Separate API key storage per service
+- Model-specific summary caching (quick switching without re-summarization)
+- Service-specific response parsing
+- Last used model persistence
+- Model selection dropdown with service grouping
+
+**Technical Implementation**:
+- Cache size limit: 50 entries per model to prevent memory leaks
+- Service-specific API call formatting
+- Different JSON response parsing for Claude vs. Gemini
+
+---
+
+### 3. Q&A System
 
 **Description**: Interactive question-answering system that provides context-aware responses about the article.
 
@@ -62,6 +91,7 @@ This document provides detailed information about all features in Summarize with
 - Auto-formatting: converts markdown-style text to HTML (bold, lists, paragraphs)
 - Concise answers limited to 150 words and 800 tokens
 - "Thinking..." loading state while processing
+- Uses the same AI model as the summary
 
 **User Experience**:
 - Press Enter or click "Ask" button to submit
@@ -80,7 +110,7 @@ This document provides detailed information about all features in Summarize with
 
 ---
 
-### 3. Copy Summary Feature
+### 4. Copy Summary Feature
 
 **Description**: Advanced clipboard functionality for copying summaries with formatting preserved.
 
@@ -106,7 +136,7 @@ This document provides detailed information about all features in Summarize with
 
 ---
 
-### 4. Custom Modal System
+### 5. Custom Modal System
 
 **Description**: Professional modal dialogs following Dieter Rams design principles, replacing native browser prompts.
 
@@ -134,7 +164,7 @@ This document provides detailed information about all features in Summarize with
 
 ---
 
-### 5. Publication-Specific Prompts
+### 6. Publication-Specific Prompts
 
 **Description**: Tailored summarization strategies based on publication type and focus.
 
@@ -174,7 +204,7 @@ This document provides detailed information about all features in Summarize with
 
 ---
 
-### 6. Inoreader Integration
+### 7. Inoreader Integration
 
 **Description**: Special support for Inoreader users to summarize selected text.
 
@@ -403,10 +433,10 @@ const dom = {
 - **Replaced with**: Q&A system (single question/answer)
 - **Reason**: Simpler, more focused interaction model
 
-### 2. Multi-Model Support
-- **Removed**: OpenAI and Gemini models
-- **Replaced with**: Claude only
-- **Reason**: Simplified configuration, focused on best model
+### 2. OpenAI Support
+- **Removed**: OpenAI GPT models
+- **Retained**: Claude and Gemini
+- **Reason**: Focus on Claude (primary) and Gemini (free tier option)
 
 ### 3. Thinking Models
 - **Removed**: Extended timeouts for reasoning models
@@ -432,12 +462,12 @@ const dom = {
 
 | Metric | Initial (2025.12.24.0100) | Current (2025.12.27.47) | Change |
 |--------|---------------------------|-------------------------|--------|
-| Lines of Code | 1,837 | 3,585 | +95% |
-| Major Features | 4 | 12 | +200% |
+| Lines of Code | 1,837 | 3,284 | +79% |
+| Major Features | 4 | 13 | +225% |
 | Services | 0 | 5 | New |
 | Performance Opts | ~5 | 15+ | +200% |
 | Supported Sites | All (*://*/*) | 5 whitelisted | Focused |
-| AI Providers | 2 (OpenAI, Gemini) | 1 (Claude) | Simplified |
+| AI Providers | 2 (OpenAI, Gemini) | 2 (Claude, Gemini) | Maintained |
 | UI Components | 4 | 10 | +150% |
 
 ---

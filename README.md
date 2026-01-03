@@ -7,11 +7,12 @@ A personal userscript fork that provides AI-powered article summarization with i
 ## Features
 
 ### Core Functionality
-- **One-Click AI Summarization**: Instantly summarize articles using Claude AI with a single button press (Alt+S)
+- **One-Click AI Summarization**: Instantly summarize articles using Claude or Gemini AI with a single button press (Alt+S)
+- **Multiple AI Services**: Support for both Claude (Sonnet 4.5) and Google Gemini (3.0 Flash) models
 - **Publication-Specific Prompts**: Tailored summarization strategies for different publication types:
   - Research-focused summaries for Harvard Business Review and Inoreader
   - News-focused summaries for Financial Times, The Economist, and The Guardian
-- **Custom Model Support**: Add and manage custom Claude models
+- **Smart Model Management**: Switch between AI models with long-press, with automatic caching per model
 - **Smart Content Extraction**: Uses Mozilla's Readability.js for accurate article content extraction
 
 ### Interactive Features
@@ -75,7 +76,9 @@ Currently whitelisted for optimal experience on:
    - [Greasemonkey](https://www.greasespot.net/) (Firefox)
    - [Violentmonkey](https://violentmonkey.github.io/) (Chrome, Firefox, Edge)
 
-2. An Anthropic API key ([Get one here](https://console.anthropic.com/))
+2. An AI API key:
+   - Anthropic API key for Claude ([Get one here](https://console.anthropic.com/))
+   - OR Google AI API key for Gemini ([Get one here](https://aistudio.google.com/apikey))
 
 ### Installation Steps
 1. Install a userscript manager for your browser
@@ -97,21 +100,18 @@ Currently whitelisted for optimal experience on:
 
 ### Selecting Models
 1. Long-press (500ms) or tap-and-hold the "S" button
-2. A dropdown will appear showing available models
+2. A dropdown will appear showing available models grouped by service:
+   - **CLAUDE**: Claude Sonnet 4.5
+   - **GEMINI**: Gemini 3.0 Flash
 3. Click a model to select it and start summarization
 4. Your selection is remembered for next time
-
-### Adding Custom Models
-1. Open the model dropdown (long-press "S" button)
-2. Click "+ Add Custom Model" at the bottom
-3. Enter "claude" as the service
-4. Enter the exact Claude model ID (e.g., `claude-3-opus-20240229`)
-5. The model will be added and available for selection
+5. Each model maintains its own summary cache for quick switching
 
 ### Managing API Keys
-1. Open the model dropdown
-2. Click "Reset Key" next to the service name (e.g., "CLAUDE")
+1. Open the model dropdown (long-press "S" button)
+2. Click "Reset Key" next to the service name (e.g., "CLAUDE" or "GEMINI")
 3. Enter your new API key or leave blank to clear
+4. Each service (Claude/Gemini) has its own separate API key storage
 
 ### Asking Questions
 1. After viewing a summary, find the input field: "Ask a question about this article"
@@ -225,18 +225,24 @@ python sync-meta.py
 
 ## API Usage & Costs
 
-The script uses the Anthropic Claude API. Typical costs:
+The script supports two AI services:
+
+### Claude (Anthropic)
 - Claude Sonnet 4.5: ~$3 per 1M input tokens, ~$15 per 1M output tokens
 - Average article summary: ~1,000 input tokens + ~300 output tokens
 - Estimated cost per summary: $0.004-0.008
+- Monitor usage at [Anthropic Console](https://console.anthropic.com/)
 
-You can monitor your usage at [Anthropic Console](https://console.anthropic.com/).
+### Gemini (Google)
+- Gemini 3.0 Flash: Free tier available with rate limits
+- Paid tier: Lower cost than Claude
+- Monitor usage at [Google AI Studio](https://aistudio.google.com/)
 
 ## Privacy & Security
 
-- API keys are stored locally in your browser using GM storage
-- No data is sent to any server except Anthropic's API
-- Article content is only sent to Anthropic for summarization
+- API keys are stored locally in your browser using GM storage (separate storage per service)
+- No data is sent to any server except the selected AI service (Claude or Gemini)
+- Article content is only sent to your chosen AI service for summarization
 - No analytics or tracking
 - Open source for full transparency
 
@@ -247,10 +253,12 @@ You can monitor your usage at [Anthropic Console](https://console.anthropic.com/
 - Try refreshing the page
 - Check if the site is in the supported list
 
-### "API key for CLAUDE is required"
+### "API key for [SERVICE] is required"
 - Click the dropdown (long-press "S" button)
-- Click "Reset Key" next to "CLAUDE"
-- Enter your Anthropic API key
+- Click "Reset Key" next to the service name (CLAUDE or GEMINI)
+- Enter your API key for the respective service:
+  - Claude: Get from [Anthropic Console](https://console.anthropic.com/)
+  - Gemini: Get from [Google AI Studio](https://aistudio.google.com/apikey)
 
 ### Images not appearing
 - Some sites may block image extraction

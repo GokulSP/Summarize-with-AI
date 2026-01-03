@@ -2,19 +2,21 @@
 
 Personal fork changelog documenting changes from the original version.
 
-## Personal Fork - Current Version
+## Personal Fork - Current Version (2026.01.01.26)
 
-Complete overhaul from original (1,837 lines → 3,585 lines, +95% increase).
+Complete overhaul from original (1,837 lines → 3,284 lines, +79% increase).
 
 ### Major Changes from Original
 
 #### New Features Added
-- **Image Gallery & Lightbox** - Extract and view article images with full-screen lightbox
-- **Q&A System** - Ask questions about articles with context-aware responses
+- **Multiple AI Service Support** - Full support for both Claude (Sonnet 4.5) and Gemini (3.0 Flash) with separate API key management
+- **Model-Specific Caching** - Each AI model maintains its own summary cache for instant switching
+- **Image Gallery & Lightbox** - Extract and view article images with full-screen lightbox and swipe navigation
+- **Q&A System** - Ask questions about articles with context-aware responses using the selected AI model
 - **Copy Summary** - One-click copy with HTML formatting and fallback strategies
 - **Custom Modals** - Professional Dieter Rams-inspired modals replacing browser dialogs
 - **Publication-Specific Prompts** - Tailored summarization for research vs news articles
-- **Inoreader Integration** - Summarize selected text on Inoreader
+- **Inoreader Integration** - Summarize selected text on Inoreader with minimum 50 character requirement
 
 #### Architecture Improvements
 - Service layer (StorageService, NotificationService, ModalService, PromptBuilder, UIHelpers)
@@ -39,18 +41,21 @@ Complete overhaul from original (1,837 lines → 3,585 lines, +95% increase).
 ### Changed from Original
 
 #### Core Changes
-- **AI Provider**: Switched from OpenAI/Gemini to Claude Sonnet 4.5 only
-- **Prompts**: Redesigned templates (research vs news, ~300 words, no emojis)
-- **Site Support**: Whitelist approach (ft.com, hbr.org, economist.com, theguardian.com, inoreader.com)
+- **AI Providers**: Switched from OpenAI/Gemini to Claude + Gemini (removed OpenAI, kept Gemini for free tier access)
+- **Model Management**: Enhanced with per-model caching and service grouping in dropdown
+- **Prompts**: Redesigned templates (research vs news, ~300 words, no emojis, structured sections)
+- **Site Support**: Whitelist approach (ft.com, hbr.org, economist.com, theguardian.com, inoreader.com) with site-specific optimizations
 - **Distribution**: GitHub Pages instead of Greasefork
+- **Button Design**: Material Blue color (#1A73E8) for better visibility and modern look
 
 #### Removed Features
 - Chat feature (replaced with simpler Q&A)
-- Multi-model support (Claude only)
-- Thinking models / extended timeouts
+- OpenAI GPT model support (kept Claude + Gemini only)
+- Thinking models / extended timeouts (single 60s timeout)
 - Language detection (English only)
-- Article quality scoring
-- Opinion sections
+- Article quality scoring (focus on content, not meta-analysis)
+- Opinion sections (more objective summaries)
+- Custom model addition UI (removed from final version)
 
 ### Fixed Issues
 - Clipboard protection against site interference
@@ -60,11 +65,41 @@ Complete overhaul from original (1,837 lines → 3,585 lines, +95% increase).
 - Better error handling
 
 ### Technical Metrics
-- **Code**: 1,837 → 3,585 lines (+95%)
-- **Services**: 5 new service layers
-- **Features**: 8 major additions
-- **Optimizations**: 15+ performance improvements
+- **Code**: 1,837 → 3,284 lines (+79%)
+- **Services**: 5 new service layers (StorageService, NotificationService, ModalService, PromptBuilder, UIHelpers)
+- **Features**: 13 major features (was 4)
+- **Optimizations**: 15+ performance improvements (regex pre-compilation, DOM caching, event delegation, etc.)
+- **AI Models**: 2 services supported (Claude Sonnet 4.5, Gemini 3.0 Flash)
 - **Distribution**: GitHub Pages at `https://gokulsp.github.io/Summarize-with-AI/`
+
+### Recent Updates (v2026.01.01.26)
+- Fixed dark mode visibility issues for Reset Key button
+- Ensured unselected models remain muted in dropdown
+- Comprehensive QA functionality fixes for Gemini API
+- Restored proper contrast and visibility across light/dark themes
+- Removed copy/share features from final version (focus on core functionality)
+
+---
+
+## Version History
+
+### 2026.01.01.26 (Current)
+- Fixed: Dark mode Reset Key visibility
+- Fixed: Model selection dropdown contrast in dark mode
+- Fixed: QA functionality for Gemini API
+- Removed: Copy/share features (streamlined UI)
+- Maintained: S button always Material Blue for consistency
+
+### Previous Versions (2025.12.x)
+- Complete rebuild with service layer architecture
+- Added image gallery with lightbox viewer
+- Added Q&A system
+- Added publication-specific prompts
+- Added custom modal system
+- Added Inoreader integration
+- Performance optimizations with caching
+- Dark mode support
+- Mobile optimization
 
 ---
 
@@ -74,11 +109,12 @@ Original project: [insign/userscripts](https://github.com/insign/userscripts) by
 
 **Original Features:**
 - OpenAI and Gemini support
-- Chat interface
-- Article quality scoring
-- Opinion sections
+- Chat interface with message history
+- Article quality scoring (1-10 with colors)
+- Opinion sections with AI analysis
 - Multi-language support
-- Universal site support
+- Universal site support (*://*/*)
+- Basic summarization with simple prompts
 
 ---
 
