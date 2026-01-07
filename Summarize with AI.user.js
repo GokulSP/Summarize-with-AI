@@ -880,6 +880,7 @@ Format exactly as shown:
 				'https://hbr.org/resources/images/podcasts/episode-cold-call.png',
 				'https://hbr.org/resources/images/products/generic-tool.png',
 				'https://hbr.org/resources/images/article_assets/2023/05/wide-hbr-on-leadership.png',
+				'https://hbr.org/resources/images/article_assets/2019/04/WomenAtWork-Wide_WP_1200.png',
 			];
 			const hbrExcludedPrefix = 'https://cdn11.bigcommerce.com/';
 
