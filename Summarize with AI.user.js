@@ -2670,7 +2670,7 @@ Format requirements:
         line-height: 1.5;
       }
       #${CONFIG.ids.content} ul {
-        margin: 1.2em 0;
+        margin: 0 0 1.2em 0;
         padding-left: 1.5em;
         color: inherit;
       }
