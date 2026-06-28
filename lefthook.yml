@@ -1,0 +1,9 @@
+pre-commit:
+  commands:
+    biome:
+      glob: "*.{js,json}"
+      run: pnpm exec biome check --write {staged_files}
+      stage_fixed: true
+    metadata:
+      glob: "Summarize with AI.user.js"
+      run: node scripts/sync-metadata.js

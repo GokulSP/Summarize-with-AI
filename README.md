@@ -195,20 +195,20 @@ pnpm install
 ### Code Quality
 The project uses:
 - **Biome**: Fast formatter and linter
-- **Husky**: Git hooks for pre-commit checks
+- **Lefthook**: Git hooks for pre-commit checks
 - **Pre-commit hook**: Automatically formats code and syncs metadata
 
 ### Making Changes
 1. Edit the main file: `Summarize with AI.user.js`
 2. Test on supported sites
-3. Commit (Husky will format and validate)
+3. Commit (Lefthook will format and validate)
 4. Push changes
 
 ### Building
 The script is self-contained and doesn't require a build step. However, metadata is automatically synced:
 ```bash
 # Manually sync metadata (done automatically on commit)
-python sync-meta.py
+node scripts/sync-metadata.js
 ```
 
 ## Browser Compatibility

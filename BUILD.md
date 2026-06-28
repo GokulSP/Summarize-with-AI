@@ -26,10 +26,6 @@ This document provides detailed instructions for personal development and mainte
   - Download from [git-scm.com](https://git-scm.com/)
   - Verify installation: `git --version`
 
-- **Python**: Version 3.6 or higher (for metadata sync script)
-  - Download from [python.org](https://www.python.org/)
-  - Verify installation: `python --version` or `python3 --version`
-
 ### Development Tools
 - **Text Editor/IDE**: VS Code recommended
   - Install Biome extension for real-time linting
@@ -55,19 +51,11 @@ pnpm install
 
 This installs:
 - `@biomejs/biome`: Fast formatter and linter
-- `husky`: Git hooks for pre-commit checks
+- `lefthook`: Git hooks for pre-commit checks
 
-### 3. Configure Git Hooks
-```bash
-pnpm run prepare
-```
+The `prepare` script runs `lefthook install` automatically, so git hooks are set up as part of `pnpm install`.
 
-This sets up Husky git hooks that will:
-- Format code with Biome before commits
-- Sync metadata file automatically
-- Validate script headers
-
-### 4. Install the Userscript Locally
+### 3. Install the Userscript Locally
 1. Open your userscript manager dashboard
 2. Create a new userscript
 3. Copy the contents of `Summarize with AI.user.js`
@@ -80,27 +68,21 @@ This sets up Husky git hooks that will:
 ```
 Summarize-with-AI/
 ├── .github/
-│   ├── workflows/          # GitHub Actions workflows
-│   │   ├── lint.yml       # Linting on PR/push
-│   │   └── release.yml    # Automated releases
-│   ├── ISSUE_TEMPLATE/    # Issue templates
-│   └── PULL_REQUEST_TEMPLATE.md
-├── .husky/
-│   └── pre-commit.js      # Pre-commit hook script
-├── Example/
-│   └── Initial.js         # Original version for reference
+│   └── workflows/
+│       └── deploy-pages.yml    # GitHub Pages deployment
+├── scripts/
+│   └── sync-metadata.js        # Metadata format + sync script
 ├── Summarize with AI.user.js   # Main userscript file
 ├── Summarize with AI.meta.js   # Auto-generated metadata
-├── sync-meta.py           # Python script to sync metadata
-├── biome.json             # Biome configuration
-├── package.json           # Project dependencies
-├── .editorconfig          # Editor configuration
-├── .gitignore             # Git ignore rules
-├── README.md              # Project documentation
-├── CHANGELOG.md           # Version history
-├── CONTRIBUTING.md        # Contribution guidelines
-├── LICENSE                # WTFPL license
-└── BUILD.md               # This file
+├── biome.json                  # Biome configuration
+├── lefthook.yml                # Git hooks configuration
+├── package.json                # Project dependencies
+├── .editorconfig               # Editor configuration
+├── .gitignore                  # Git ignore rules
+├── README.md                   # Project documentation
+├── CHANGELOG.md                # Version history
+├── LICENSE                     # WTFPL license
+└── BUILD.md                    # This file
 ```
 
 ### Making Code Changes
@@ -214,7 +196,7 @@ pnpm exec biome check --write .
 Biome configuration is in `biome.json`:
 - **Formatter**: Tab indentation, 100 char line width, single quotes
 - **Linter**: Enabled with recommended rules plus custom rules
-- **Ignored files**: node_modules, .husky, .vscode, .claude, Example/, *.meta.js
+- **Ignored files**: node_modules, .vscode, .claude, Example/, *.meta.js
 
 ### Sync Metadata
 
@@ -222,9 +204,7 @@ The metadata file (`Summarize with AI.meta.js`) must stay in sync with the main 
 
 ```bash
 # Manually sync metadata
-python sync-meta.py
-# or
-python3 sync-meta.py
+node scripts/sync-metadata.js
 ```
 
 This is automatically done by the pre-commit hook.
@@ -363,7 +343,7 @@ If the pre-commit hook fails:
    pnpm exec biome check --write .
 
    # Sync metadata
-   python sync-meta.py
+   node scripts/sync-metadata.js
 
    # Try commit again
    git commit -m "your message"
@@ -391,7 +371,7 @@ If metadata is out of sync:
 
 1. **Run sync script**:
    ```bash
-   python sync-meta.py
+   node scripts/sync-metadata.js
    ```
 
 2. **Verify changes**:
@@ -415,28 +395,10 @@ If the script doesn't work during testing:
 4. **Check API key** is set correctly
 5. **Try on a different article** (some pages may not be readerable)
 
-### Build Script Not Found
-
-If `sync-meta.py` doesn't run:
-
-1. **Check Python is installed**:
-   ```bash
-   python --version
-   # or
-   python3 --version
-   ```
-
-2. **Run with explicit python3**:
-   ```bash
-   python3 sync-meta.py
-   ```
-
-3. **Check file exists** in root directory
-
 ## Additional Resources
 
 - [Biome Documentation](https://biomejs.dev/)
-- [Husky Documentation](https://typicode.github.io/husky/)
+- [Lefthook Documentation](https://lefthook.dev/)
 - [Userscript Documentation](https://wiki.greasespot.net/)
 - [Tampermonkey Documentation](https://www.tampermonkey.net/documentation.php)
 - [Claude API Documentation](https://docs.anthropic.com/)
