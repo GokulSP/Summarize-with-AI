@@ -133,7 +133,7 @@ Format: `YYYY.MM.DD.XX` where XX is the iteration number for that day.
 #### 4. Test Your Changes
 1. Save the file
 2. Reload the userscript in your browser
-3. Visit a supported site (ft.com, hbr.org, economist.com, etc.)
+3. Visit a supported site (hbr.org or economist.com)
 4. Test the functionality you changed
 5. Check the browser console (F12) for errors
 
@@ -214,11 +214,8 @@ This is automatically done by the pre-commit hook.
 ### Manual Testing Checklist
 
 Test on supported sites:
-- [ ] **Financial Times** (ft.com)
 - [ ] **Harvard Business Review** (hbr.org)
 - [ ] **The Economist** (economist.com)
-- [ ] **The Guardian** (theguardian.com)
-- [ ] **Inoreader** (inoreader.com)
 
 Test features:
 - [ ] Button appears on articles

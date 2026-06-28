@@ -32,10 +32,8 @@ This document provides detailed information about all features in Summarize with
   - Memory-efficient with cleanup on close
 
 **Site-Specific Optimizations**:
-- **Financial Times**: Extracts FT-specific image classes and CDN URLs
 - **Harvard Business Review**: Optimized for HBR's article image structure
 - **The Economist**: Handles Economist's CDN with lazy loading
-- **The Guardian**: Extracts Guardian's responsive image sets
 
 **Technical Implementation**:
 - Pre-compiled regex patterns for URL parsing
@@ -123,7 +121,6 @@ This document provides detailed information about all features in Summarize with
 **Fallback Strategies**:
 1. Native Clipboard API with HTML support (`navigator.clipboard.write`)
 2. Fallback with `document.execCommand('copy')`
-3. Protection against site interference (e.g., FT.com adding attribution)
 
 **Technical Implementation**:
 - Native API reference storage to prevent website overrides
@@ -175,19 +172,9 @@ This document provides detailed information about all features in Summarize with
   - Focus: Strategic frameworks, management principles, actionable insights
   - Template: Insight → Impact → Evidence → Application → Context → Limitations
 
-- **Inoreader** (inoreader.com)
-  - Focus: Professional analysis and business insights
-  - Template: Same as HBR
-
 **News-Focused** (current events, impact, context):
-- **Financial Times** (ft.com)
-  - Focus: Market impact, regulatory implications, economic trends
-
 - **The Economist** (economist.com)
   - Focus: Geopolitical significance, historical parallels
-
-- **The Guardian** (theguardian.com)
-  - Focus: Social impact, marginalized voices, accountability
 
 **Template Structure**:
 - Research: Insight → Impact → Evidence → Application → Context → Limitations
@@ -201,25 +188,6 @@ This document provides detailed information about all features in Summarize with
 
 **File References**:
 - PromptBuilder: [Summarize with AI.user.js:250-400](Summarize with AI.user.js#L250-L400)
-
----
-
-### 7. Inoreader Integration
-
-**Description**: Special support for Inoreader users to summarize selected text.
-
-**Features**:
-- Detects when on inoreader.com domain
-- Allows summarizing selected text (minimum 50 characters)
-- Automatic title extraction from DOM or selection
-- Fallback title extraction from first line of selected text
-- Error notification if selection is too short
-
-**Use Case**:
-Users can select interesting portions of articles in their Inoreader feed and get instant AI summaries without leaving the app.
-
-**File References**:
-- Inoreader support: [Summarize with AI.user.js:2500-2600](Summarize with AI.user.js#L2500-L2600)
 
 ---
 

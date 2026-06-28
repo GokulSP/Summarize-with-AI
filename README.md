@@ -10,8 +10,8 @@ A personal userscript fork that provides AI-powered article summarization with i
 - **One-Click AI Summarization**: Instantly summarize articles using Claude or Gemini AI with a single button press (Alt+S)
 - **Multiple AI Services**: Support for both Claude (Sonnet 4.5) and Google Gemini (3.0 Flash) models
 - **Publication-Specific Prompts**: Tailored summarization strategies for different publication types:
-  - Research-focused summaries for Harvard Business Review and Inoreader
-  - News-focused summaries for Financial Times, The Economist, and The Guardian
+  - Research-focused summaries for Harvard Business Review
+  - News-focused summaries for The Economist
 - **Smart Model Management**: Switch between AI models with long-press, with automatic caching per model
 - **Smart Content Extraction**: Uses Mozilla's Readability.js for accurate article content extraction
 
@@ -32,7 +32,6 @@ A personal userscript fork that provides AI-powered article summarization with i
 - **Copy Summary**:
   - One-click copy with HTML formatting preserved
   - Multiple fallback strategies for maximum compatibility
-  - Protection against site interference (e.g., FT.com attribution)
   - Visual feedback with "Copied ✓" confirmation
 
 ### User Experience
@@ -62,11 +61,8 @@ A personal userscript fork that provides AI-powered article summarization with i
 
 ### Supported Sites
 Currently whitelisted for optimal experience on:
-- Financial Times (ft.com)
 - Harvard Business Review (hbr.org)
 - The Economist (economist.com)
-- The Guardian (theguardian.com)
-- Inoreader (inoreader.com) - with text selection support
 
 ## Installation
 
@@ -84,7 +80,7 @@ Currently whitelisted for optimal experience on:
 1. Install a userscript manager for your browser
 2. Click the install link: **[Install Summarize with AI](https://gokulsp.github.io/Summarize-with-AI/Summarize%20with%20AI.user.js)**
 3. Your userscript manager will prompt you to install - click "Install"
-4. Visit any supported site (ft.com, hbr.org, economist.com, theguardian.com, or inoreader.com)
+4. Visit any supported site (hbr.org or economist.com)
 5. When prompted, enter your Anthropic API key
 
 ## Usage
@@ -119,11 +115,6 @@ Currently whitelisted for optimal experience on:
 3. Press Enter or click the "Ask" button
 4. The answer appears below with formatted sections
 
-### Using Inoreader Integration
-1. On Inoreader, select at least 50 characters of text
-2. Click the "S" button or press Alt+S
-3. The selected text will be summarized
-
 ### Keyboard Shortcuts
 - **Alt+S**: Trigger summarization
 - **Escape**: Close overlay or dropdown
@@ -151,8 +142,8 @@ CONFIG = {
 
 ### Publication-Specific Prompts
 Summaries are automatically tailored based on the site:
-- **Research publications** (HBR, Inoreader): Focus on strategic insights, frameworks, and actionable applications
-- **News publications** (FT, Economist, Guardian): Focus on current events, impact, and context
+- **Research publications** (HBR): Focus on strategic insights, frameworks, and actionable applications
+- **News publications** (Economist): Focus on current events, impact, and context
 
 ## Architecture
 

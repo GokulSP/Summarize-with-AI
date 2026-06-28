@@ -7,11 +7,8 @@
 // @contributor Gokul SP (Personal fork maintainer)
 // @contributor Claude (Anthropic AI assistant)
 // @license     WTFPL
-// @match       https://www.ft.com/*
 // @match       https://hbr.org/*
 // @match       https://www.economist.com/*
-// @match       https://www.theguardian.com/*
-// @match       https://www.inoreader.com/*
 // @grant       GM.addStyle
 // @grant       GM.xmlHttpRequest
 // @grant       GM.setValue
@@ -102,25 +99,10 @@
 				focus:
 					'strategic frameworks, management principles, actionable insights for leaders, and practical applications for organizations',
 			},
-			'inoreader.com': {
-				type: 'research',
-				focus:
-					'research findings, innovation patterns, technological implications, organizational change dynamics, and data-driven insights',
-			},
-			'ft.com': {
-				type: 'news',
-				focus:
-					'market impact, regulatory implications, institutional perspectives, data/statistics, and connections to broader economic trends',
-			},
 			'economist.com': {
 				type: 'news',
 				focus:
 					'geopolitical significance, economic indicators, historical parallels, ideological positions, and cross-border implications',
-			},
-			'theguardian.com': {
-				type: 'news',
-				focus:
-					'social impact, stakeholder perspectives (especially marginalized voices), political context, investigative details, and accountability questions',
 			},
 		},
 
@@ -777,10 +759,6 @@ Format exactly as shown:
 
 	function getArticleData() {
 		try {
-			if (window.location.hostname.includes('inoreader.com')) {
-				return { title: 'Inoreader Article', content: 'placeholder' };
-			}
-
 			const documentClone = document.cloneNode(true);
 			const nonContentElements = documentClone.querySelectorAll(
 				'script, style, noscript, iframe, figure, img, svg, header, footer, nav',
@@ -808,7 +786,6 @@ Format exactly as shown:
 	// Pre-compiled regex patterns (compile once at module level)
 	const IMAGE_EXTRACTION_REGEX = {
 		economistWidth: /width=(\d+)/,
-		guardianWidth: /[?&]width=(\d+)/,
 	};
 
 	// Pre-calculated constants
@@ -818,10 +795,8 @@ Format exactly as shown:
 		try {
 			// Site-specific detection (cached once)
 			const hostname = window.location.hostname;
-			const isFT = hostname.includes('ft.com');
 			const isHBR = hostname.includes('hbr.org');
 			const isEconomist = hostname.includes('economist.com');
-			const isGuardian = hostname.includes('theguardian.com');
 
 			// Optimized lazy loading: Use Intersection Observer API instead of forced scrolling
 			// This is non-blocking and much more performant
@@ -884,9 +859,6 @@ Format exactly as shown:
 			];
 			const hbrExcludedPrefix = 'https://cdn11.bigcommerce.com/';
 
-			// FT low priority domain
-			const ftLowPriorityDomain = 'images.ft.com';
-
 			// Visualization domains for fast checking
 			const vizDomains = ['flo.uri.sh', 'flourish', 'datawrapper.dwcdn.net'];
 
@@ -947,8 +919,6 @@ Format exactly as shown:
 					}
 
 					// Early URL filtering - optimized HBR check
-					if (isFT && src.includes('www.ft.com/__origami/service/image/v2/images/raw/')) continue;
-
 					if (isHBR) {
 						if (src.startsWith(hbrExcludedPrefix)) continue;
 						// Optimize: use some() instead of manual loop
@@ -970,14 +940,6 @@ Format exactly as shown:
 							// Detect Economist charts (WBC = Weekly Business Chart, or content-assets/images path)
 							isEconomistChart = src.includes('WBC') || src.includes('content-assets/images');
 						}
-					} else if (isGuardian && src.includes('?width=')) {
-						const match = IMAGE_EXTRACTION_REGEX.guardianWidth.exec(src);
-						if (match) {
-							width = parseInt(match[1], 10);
-							if (img.naturalHeight > 0 && img.naturalWidth > 0) {
-								height = Math.round(width * (img.naturalHeight / img.naturalWidth));
-							}
-						}
 					}
 
 					// Combined size filters (with exemption for Economist charts)
@@ -989,7 +951,6 @@ Format exactly as shown:
 							continue;
 						}
 					}
-					if (isFT && width === 300 && height === 300) continue;
 					if (
 						isHBR &&
 						((width === 500 && height >= 700 && height <= 800) || (width === 383 && height === 215))
@@ -1002,9 +963,6 @@ Format exactly as shown:
 						hasEconomistLargeImage = true;
 					}
 
-					// Priority marking for FT (simplified)
-					const priority = isFT && src.includes(ftLowPriorityDomain) ? -1 : 0;
-
 					seen.add(src);
 					images.push({
 						src,
@@ -1012,7 +970,7 @@ Format exactly as shown:
 						width,
 						height,
 						type: 'image',
-						priority,
+						priority: 0,
 					});
 				}
 			}
@@ -1027,15 +985,10 @@ Format exactly as shown:
 	function addSummarizeButton() {
 		if (dom.button) return;
 
-		const isInoreader = window.location.hostname.includes('inoreader.com');
-		const title = isInoreader
-			? 'Summarize Selected Text or Article (Alt+S) / Long Press to Select Model'
-			: 'Summarize (Alt+S) / Long Press or Tap & Hold to Select Model';
-
 		dom.button = createElement('div', {
 			id: CONFIG.ids.button,
 			textContent: 'S',
-			title: title,
+			title: 'Summarize (Alt+S) / Long Press or Tap & Hold to Select Model',
 		});
 		document.body.appendChild(dom.button);
 
@@ -1304,72 +1257,6 @@ Format exactly as shown:
 		return null;
 	}
 
-	function validateInoreaderArticle() {
-		const selection = window.getSelection();
-		const selectedText = selection?.toString().trim();
-
-		if (selectedText && selectedText.length > CONFIG.limits.minSelectionLength) {
-			// Try to extract title from the selection or nearby DOM elements
-			let title = 'Inoreader Article';
-
-			try {
-				// Get the anchor node (starting point of selection)
-				const anchorNode = selection.anchorNode;
-
-				// Try to find the article container
-				let articleElement = anchorNode?.parentElement;
-				while (articleElement && !articleElement.classList?.contains('article_content')) {
-					articleElement = articleElement.parentElement;
-					// Stop if we've gone too far up the DOM
-					if (articleElement === document.body) break;
-				}
-
-				if (articleElement) {
-					// Try to find title in various possible locations
-					// Check for article title link in the header
-					const titleLink = articleElement.querySelector('.article_title a.article_title_link');
-					if (titleLink?.textContent?.trim()) {
-						title = titleLink.textContent.trim();
-					} else {
-						// Try alternative selectors
-						const altTitle =
-							articleElement.querySelector('.article_title') ||
-							articleElement.querySelector('.article_header h1') ||
-							articleElement.querySelector('[class*="title"]');
-						if (altTitle?.textContent?.trim()) {
-							title = altTitle.textContent.trim();
-						}
-					}
-				}
-
-				// If we still don't have a good title, try to extract from the first line of selected text
-				if (title === 'Inoreader Article') {
-					const firstLine = selectedText.split('\n')[0].trim();
-					// If the first line looks like a title (not too long, no "by" author attribution)
-					if (
-						firstLine.length > 10 &&
-						firstLine.length < 150 &&
-						!firstLine.toLowerCase().startsWith('by ')
-					) {
-						title = firstLine;
-					}
-				}
-			} catch (error) {
-				console.warn('Failed to extract Inoreader article title:', error);
-			}
-
-			return {
-				title: title,
-				content: selectedText,
-			};
-		}
-
-		showErrorNotification(
-			`Please select at least ${CONFIG.limits.minSelectionLength} characters to summarize.`,
-		);
-		return null;
-	}
-
 	async function validateModelAndApiKey() {
 		const modelConfig = getActiveModelConfig();
 		if (!modelConfig) {
@@ -1438,12 +1325,7 @@ Format exactly as shown:
 	}
 
 	async function getValidatedArticleData() {
-		let articleData = state.articleData;
-
-		if (window.location.hostname.includes('inoreader.com')) {
-			articleData = validateInoreaderArticle();
-			if (!articleData) return null;
-		}
+		const articleData = state.articleData;
 
 		if (!articleData) {
 			showErrorNotification(

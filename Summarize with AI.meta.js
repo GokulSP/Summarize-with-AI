@@ -7,11 +7,8 @@
 // @contributor Gokul SP (Personal fork maintainer)
 // @contributor Claude (Anthropic AI assistant)
 // @license     WTFPL
-// @match       https://www.ft.com/*
 // @match       https://hbr.org/*
 // @match       https://www.economist.com/*
-// @match       https://www.theguardian.com/*
-// @match       https://www.inoreader.com/*
 // @grant       GM.addStyle
 // @grant       GM.xmlHttpRequest
 // @grant       GM.setValue
