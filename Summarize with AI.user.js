@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Summarize with AI
 // @namespace   https://github.com/insign/userscripts
-// @version     2026.06.28.01
+// @version     2026.06.28.02
 // @description Single-button AI summarization (Claude & Gemini) with model selection dropdown for articles/news. Uses Alt+S shortcut. Long press 'S' (or tap-and-hold on mobile) to select model. Allows adding custom models. Custom modals with Dieter Rams-inspired design. Adapts to dark mode and mobile viewports.
 // @author      Hélio <open@helio.me>
 // @contributor Gokul SP (Personal fork maintainer)
@@ -239,6 +239,7 @@ Format exactly as shown:
 	const StorageService = {
 		keys: {
 			LAST_USED_MODEL: 'last_used_model',
+			SONNET_CACHE: 'latest_sonnet_cache',
 			API_KEY: service => `${service}_api_key`,
 		},
 
@@ -273,6 +274,14 @@ Format exactly as shown:
 
 		async clearApiKey(service) {
 			return await this.setApiKey(service, '');
+		},
+
+		async getLatestSonnetCache() {
+			return await GM.getValue(this.keys.SONNET_CACHE, null);
+		},
+
+		async setLatestSonnetCache(modelId) {
+			await GM.setValue(this.keys.SONNET_CACHE, { modelId, timestamp: Date.now() });
 		},
 	};
 
@@ -1276,7 +1285,27 @@ Format exactly as shown:
 			return null;
 		}
 
-		return { modelConfig, apiKey, service, modelDisplayName };
+		if (service === 'claude') {
+			const latestSonnet = await resolveLatestSonnetModel(apiKey);
+			if (latestSonnet) {
+				const currentEntry = CONFIG.modelGroups.claude.models[0];
+				if (currentEntry.id !== latestSonnet.id) {
+					currentEntry.id = latestSonnet.id;
+					currentEntry.name = latestSonnet.name;
+					if (state.activeModel.startsWith('claude-sonnet')) {
+						state.activeModel = latestSonnet.id;
+						StorageService.setLastUsedModel(state.activeModel);
+					}
+					_modelConfigCache.clear();
+					state.dropdownNeedsUpdate = true;
+				}
+			}
+		}
+
+		const finalModelConfig = getActiveModelConfig() ?? modelConfig;
+		const finalDisplayName = finalModelConfig.name || finalModelConfig.id;
+
+		return { modelConfig: finalModelConfig, apiKey, service, modelDisplayName: finalDisplayName };
 	}
 
 	async function processSummarization() {
@@ -1407,6 +1436,66 @@ Format exactly as shown:
 				ontimeout: () => reject(new Error('Request timed out after 60 seconds')),
 			});
 		});
+	}
+
+	function formatSonnetName(modelId) {
+		const match = modelId.match(/claude-sonnet-(.+)$/);
+		return match ? `Sonnet ${match[1].replace(/-/g, '.')}` : modelId;
+	}
+
+	function fetchLatestSonnetModel(apiKey) {
+		return new Promise((resolve, reject) => {
+			GM.xmlHttpRequest({
+				method: 'GET',
+				url: 'https://api.anthropic.com/v1/models',
+				headers: {
+					'x-api-key': apiKey,
+					'anthropic-version': '2023-06-01',
+				},
+				responseType: 'json',
+				timeout: 10000,
+				onload: response => {
+					const data =
+						typeof response.response === 'object'
+							? response.response
+							: JSON.parse(response.responseText || '{}');
+					if (response.status < 200 || response.status >= 300) {
+						reject(new Error(`Models API error: ${response.status}`));
+						return;
+					}
+					const sonnetModels = (data.data || [])
+						.filter(m => m.id?.startsWith('claude-sonnet'))
+						.sort((a, b) => b.id.localeCompare(a.id));
+					if (sonnetModels.length > 0) {
+						resolve(sonnetModels[0]);
+					} else {
+						reject(new Error('No Sonnet models found'));
+					}
+				},
+				onerror: err =>
+					reject(new Error(`Network error: ${err.statusText || 'Failed to connect'}`)),
+				ontimeout: () => reject(new Error('Models API request timed out')),
+			});
+		});
+	}
+
+	async function resolveLatestSonnetModel(apiKey) {
+		const CACHE_TTL = 24 * 60 * 60 * 1000;
+		try {
+			const cached = await StorageService.getLatestSonnetCache();
+			if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+				return { id: cached.modelId, name: formatSonnetName(cached.modelId) };
+			}
+			const model = await fetchLatestSonnetModel(apiKey);
+			await StorageService.setLatestSonnetCache(model.id);
+			return { id: model.id, name: formatSonnetName(model.id) };
+		} catch (err) {
+			console.warn(
+				'Summarize with AI: Could not fetch latest Sonnet model, using default:',
+				err.message,
+			);
+			return null;
+		}
 	}
 
 	// Consolidated regex patterns at module level for better performance and maintainability
