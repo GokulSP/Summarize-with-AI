@@ -7,3 +7,8 @@ pre-commit:
     metadata:
       glob: "Summarize with AI.user.js"
       run: node scripts/sync-metadata.js
+
+pre-push:
+  commands:
+    check-lockfile:
+      run: pnpm install --frozen-lockfile
