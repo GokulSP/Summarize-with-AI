@@ -9,6 +9,8 @@
 // @license     WTFPL
 // @match       https://hbr.org/*
 // @match       https://www.economist.com/*
+// @match       https://www.bloomberg.com/*
+// @match       https://www.abc.net.au/*
 // @grant       GM.addStyle
 // @grant       GM.xmlHttpRequest
 // @grant       GM.setValue
