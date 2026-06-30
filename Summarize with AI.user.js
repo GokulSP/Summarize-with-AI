@@ -92,20 +92,6 @@
 			},
 		},
 
-		// Publication Configurations
-		publications: {
-			'hbr.org': {
-				type: 'research',
-				focus:
-					'strategic frameworks, management principles, actionable insights for leaders, and practical applications for organizations',
-			},
-			'economist.com': {
-				type: 'news',
-				focus:
-					'geopolitical significance, economic indicators, historical parallels, ideological positions, and cross-border implications',
-			},
-		},
-
 		// UI Styles & Colors
 		styles: {
 			fontFamily:
@@ -125,115 +111,37 @@
 		},
 	};
 
-	const PromptBuilder = {
-		_configCache: null,
-		_cachedHostname: null,
-
-		_getPublicationConfig(hostname) {
-			if (this._cachedHostname === hostname && this._configCache) {
-				return this._configCache;
-			}
-
-			for (const [domain, config] of Object.entries(CONFIG.publications)) {
-				if (hostname.includes(domain)) {
-					this._cachedHostname = hostname;
-					this._configCache = config;
-					return config;
-				}
-			}
-
-			const defaultConfig = {
-				type: 'news',
-				focus:
-					'key arguments, supporting evidence, stakeholder perspectives, and broader implications',
-			};
-			this._cachedHostname = hostname;
-			this._configCache = defaultConfig;
-			return defaultConfig;
-		},
-
-		_buildCommonHeader() {
-			return `Target: ~${CONFIG.limits.targetWordCount} words
-Tags: <p>, <ul>, <li>, <strong> only`;
-		},
-
-		_buildResearchTemplate(focus, title, content) {
-			return `${this._buildCommonHeader()}
+	const PROMPT_TEMPLATE = (title, content) => `Target: ~${CONFIG.limits.targetWordCount} words
+Tags: <p>, <ul>, <li>, <strong> only
 
 <article>
 <title>${title}</title>
 <content>${content}</content>
 </article>
 
-Create a summary focused on ${focus}.
+Summarize this article accurately and concisely.
 
 Format exactly as shown:
 
-<p><strong>Insight:</strong></p>
-<p>One memorable sentence capturing the main finding.</p>
+<p><strong>Core Insight:</strong></p>
+<p>The central finding, argument, or event in one sentence.</p>
 
-<p><strong>Impact:</strong></p>
-<p>Real-world significance in 1-2 sentences.</p>
-
-<p><strong>Evidence:</strong></p>
+<p><strong>Key Points:</strong></p>
 <ul>
-<li>Critical finding (max ${CONFIG.limits.bulletPointMaxWords} words)</li>
-<li>Supporting pattern (max ${CONFIG.limits.bulletPointMaxWords} words)</li>
-<li>Additional proof (max ${CONFIG.limits.bulletPointMaxWords} words)</li>
-</ul>
-
-<p><strong>Application:</strong></p>
-<p>2-3 actionable steps for implementation.</p>
-
-<p><strong>Context:</strong></p>
-<p>Specific trigger scenarios and when to apply in 1-2 sentences.</p>
-
-<p><strong>Limitations:</strong></p>
-<p>Conflicting evidence, edge cases not addressed, and unresolved questions in 1-2 sentences.</p>`;
-		},
-
-		_buildNewsTemplate(focus, title, content) {
-			return `${this._buildCommonHeader()}
-
-<article>
-<title>${title}</title>
-<content>${content}</content>
-</article>
-
-Create a summary emphasizing ${focus}.
-
-Format exactly as shown:
-
-<p><strong>Summary:</strong></p>
-<p>Event and significance in 2 sentences.</p>
-
-<p><strong>Details:</strong></p>
-<ul>
-<li>Most critical detail (max ${CONFIG.limits.bulletPointMaxWords} words)</li>
-<li>Second essential fact (max ${CONFIG.limits.bulletPointMaxWords} words)</li>
+<li>Most important point (max ${CONFIG.limits.bulletPointMaxWords} words)</li>
+<li>Second key point (max ${CONFIG.limits.bulletPointMaxWords} words)</li>
 <li>Third key point (max ${CONFIG.limits.bulletPointMaxWords} words)</li>
-<li>Fourth important detail (max ${CONFIG.limits.bulletPointMaxWords} words)</li>
+<li>Fourth key point (max ${CONFIG.limits.bulletPointMaxWords} words)</li>
 </ul>
 
-<p><strong>Impact:</strong></p>
-<p>Significance or memorable angle in 1-2 sentences.</p>
+<p><strong>Significance:</strong></p>
+<p>Real-world impact, practical application, or broader implications in 1-2 sentences.</p>
 
 <p><strong>Context:</strong></p>
-<p>Background and historical perspective in 1-2 sentences.</p>
+<p>Relevant background, historical perspective, or setting in 1-2 sentences.</p>
 
 <p><strong>Limitations:</strong></p>
-<p>Counterarguments, missing perspectives, and key uncertainties in 1-2 sentences.</p>`;
-		},
-
-		build(title, content) {
-			const config = this._getPublicationConfig(window.location.hostname);
-			return config.type === 'research'
-				? this._buildResearchTemplate(config.focus, title, content)
-				: this._buildNewsTemplate(config.focus, title, content);
-		},
-	};
-
-	const PROMPT_TEMPLATE = (title, content) => PromptBuilder.build(title, content);
+<p>Counterarguments, missing perspectives, or unresolved uncertainties in 1-2 sentences.</p>`;
 
 	// Storage Layer - Centralized storage operations
 	const StorageService = {
@@ -1662,7 +1570,6 @@ Format exactly as shown:
 		// Use consolidated regex patterns
 		const { formatQA } = REGEX_PATTERNS;
 
-		// Convert [From Article] and [Expert Context] to section headers
 		formatted = formatted.replace(formatQA.brackets, '<p><strong>$1</strong></p>');
 
 		// Add line break BEFORE any bold label ending with colon (like "**Actionable Insights:**")
@@ -1786,7 +1693,7 @@ Format exactly as shown:
 
 			const { modelConfig, apiKey, service } = validationResult;
 
-			const prompt = `You are an expert analyst with deep knowledge across business, technology, management, and research. Use the article below as your primary context, but draw upon your full expertise to provide comprehensive, insightful answers.
+			const prompt = `Answer the following question about this article. Use the article as your primary source; supplement with broader knowledge where relevant, noting it briefly.
 
 <article>
 <title>${state.articleData.title}</title>
@@ -1795,19 +1702,7 @@ Format exactly as shown:
 
 Question: ${question}
 
-Instructions:
-1. First, address what the article explicitly states about this question
-2. Then, if relevant, expand with your broader knowledge and expertise to provide additional context, frameworks, or insights
-3. Make clear distinctions between what's from the article vs. your additional expert knowledge
-4. If the article doesn't address the question, use the article's topic as context and apply your expertise
-5. Provide actionable insights where possible
-6. Keep your response focused and under 150 words
-
-Format requirements:
-- Use ONLY these section headers: [From Article:] and [Expert Context:]
-- Do NOT create additional section headers like "Key insight:", "Immediate actions:", "Actionable approaches:", etc.
-- Present insights and actions as regular paragraphs or bullet points within the two main sections
-- Keep your formatting simple and consistent`;
+Keep your answer under 150 words. Write in clear paragraphs. No section headers.`;
 
 			// Build payload based on service
 			let payload;
