@@ -79,7 +79,7 @@
 			claude: {
 				name: 'Claude',
 				baseUrl: 'https://api.anthropic.com/v1/messages',
-				models: [{ id: 'claude-sonnet-4-6', name: 'Sonnet 4.6' }],
+				models: [{ id: 'claude-sonnet-4-6', name: 'Sonnet' }],
 				get defaultParams() {
 					return { max_tokens: CONFIG.limits.defaultMaxTokens };
 				},
@@ -87,7 +87,7 @@
 			gemini: {
 				name: 'Gemini',
 				baseUrl: 'https://generativelanguage.googleapis.com/v1beta/models',
-				models: [{ id: 'gemini-3-flash-preview', name: 'Flash 3.0' }],
+				models: [{ id: 'gemini-2.5-flash', name: 'Flash' }],
 				get defaultParams() {
 					return {};
 				},
@@ -150,6 +150,7 @@ Format exactly as shown:
 		keys: {
 			LAST_USED_MODEL: 'last_used_model',
 			SONNET_CACHE: 'latest_sonnet_cache',
+			GEMINI_CACHE: 'latest_gemini_cache',
 			API_KEY: service => `${service}_api_key`,
 		},
 
@@ -192,6 +193,14 @@ Format exactly as shown:
 
 		async setLatestSonnetCache(modelId) {
 			await GM.setValue(this.keys.SONNET_CACHE, { modelId, timestamp: Date.now() });
+		},
+
+		async getLatestGeminiCache() {
+			return await GM.getValue(this.keys.GEMINI_CACHE, null);
+		},
+
+		async setLatestGeminiCache(modelId) {
+			await GM.setValue(this.keys.GEMINI_CACHE, { modelId, timestamp: Date.now() });
 		},
 	};
 
@@ -1212,6 +1221,23 @@ Format exactly as shown:
 			}
 		}
 
+		if (service === 'gemini') {
+			const latestGemini = await resolveLatestGeminiModel(apiKey);
+			if (latestGemini) {
+				const currentEntry = CONFIG.modelGroups.gemini.models[0];
+				if (currentEntry.id !== latestGemini.id) {
+					currentEntry.id = latestGemini.id;
+					currentEntry.name = latestGemini.name;
+					if (state.activeModel.startsWith('gemini')) {
+						state.activeModel = latestGemini.id;
+						StorageService.setLastUsedModel(state.activeModel);
+					}
+					_modelConfigCache.clear();
+					state.dropdownNeedsUpdate = true;
+				}
+			}
+		}
+
 		const finalModelConfig = getActiveModelConfig() ?? modelConfig;
 		const finalDisplayName = finalModelConfig.name || finalModelConfig.id;
 
@@ -1348,9 +1374,8 @@ Format exactly as shown:
 		});
 	}
 
-	function formatSonnetName(modelId) {
-		const match = modelId.match(/claude-sonnet-(.+)$/);
-		return match ? `Sonnet ${match[1].replace(/-/g, '.')}` : modelId;
+	function formatSonnetName(_modelId) {
+		return 'Sonnet';
 	}
 
 	function fetchLatestSonnetModel(apiKey) {
@@ -1402,6 +1427,68 @@ Format exactly as shown:
 		} catch (err) {
 			console.warn(
 				'Summarize with AI: Could not fetch latest Sonnet model, using default:',
+				err.message,
+			);
+			return null;
+		}
+	}
+
+	function formatGeminiFlashName(_modelId) {
+		return 'Flash';
+	}
+
+	function fetchLatestGeminiFlashModel(apiKey) {
+		return new Promise((resolve, reject) => {
+			GM.xmlHttpRequest({
+				method: 'GET',
+				url: `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
+				responseType: 'json',
+				timeout: 10000,
+				onload: response => {
+					const data =
+						typeof response.response === 'object'
+							? response.response
+							: JSON.parse(response.responseText || '{}');
+					if (response.status < 200 || response.status >= 300) {
+						reject(new Error(`Models API error: ${response.status}`));
+						return;
+					}
+					const flashModels = (data.models || [])
+						.filter(m => {
+							const id = m.name?.replace('models/', '');
+							return (
+								id?.includes('flash') &&
+								(m.supportedGenerationMethods || []).includes('generateContent')
+							);
+						})
+						.map(m => m.name.replace('models/', ''))
+						.sort((a, b) => b.localeCompare(a));
+					if (flashModels.length > 0) {
+						resolve(flashModels[0]);
+					} else {
+						reject(new Error('No Gemini Flash models found'));
+					}
+				},
+				onerror: err =>
+					reject(new Error(`Network error: ${err.statusText || 'Failed to connect'}`)),
+				ontimeout: () => reject(new Error('Models API request timed out')),
+			});
+		});
+	}
+
+	async function resolveLatestGeminiModel(apiKey) {
+		const CACHE_TTL = 24 * 60 * 60 * 1000;
+		try {
+			const cached = await StorageService.getLatestGeminiCache();
+			if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+				return { id: cached.modelId, name: formatGeminiFlashName(cached.modelId) };
+			}
+			const modelId = await fetchLatestGeminiFlashModel(apiKey);
+			await StorageService.setLatestGeminiCache(modelId);
+			return { id: modelId, name: formatGeminiFlashName(modelId) };
+		} catch (err) {
+			console.warn(
+				'Summarize with AI: Could not fetch latest Gemini model, using default:',
 				err.message,
 			);
 			return null;
