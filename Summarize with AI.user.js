@@ -87,7 +87,7 @@
 			gemini: {
 				name: 'Gemini',
 				baseUrl: 'https://generativelanguage.googleapis.com/v1beta/models',
-				models: [{ id: 'gemini-2.5-flash', name: 'Flash' }],
+				models: [{ id: 'gemini-3.5-flash', name: 'Flash' }],
 				get defaultParams() {
 					return {};
 				},
