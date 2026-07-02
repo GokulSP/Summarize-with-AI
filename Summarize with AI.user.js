@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Summarize with AI
 // @namespace   https://github.com/insign/userscripts
-// @version     2026.07.03.01
+// @version     2026.07.03.02
 // @description Single-button AI summarization (Claude & Gemini) with model selection dropdown for articles/news. Uses Alt+S shortcut. Long press 'S' (or tap-and-hold on mobile) to select model. Allows adding custom models. Custom modals with Dieter Rams-inspired design. Adapts to dark mode and mobile viewports.
 // @author      Hélio <open@helio.me>
 // @contributor Gokul SP (Personal fork maintainer)
@@ -1186,7 +1186,23 @@ Format exactly as shown:
 	}
 
 	async function validateModelAndApiKey() {
-		const modelConfig = getActiveModelConfig();
+		let modelConfig = getActiveModelConfig();
+		if (!modelConfig) {
+			// The persisted model ID may be stale (e.g. an auto-discovered model from a
+			// prior session that no longer matches the freshly-initialized seed list).
+			// Fall back to that service's seed model so the auto-discovery below can
+			// reconcile state.activeModel to the current latest model.
+			const fallbackService = state.activeModel.startsWith('gemini')
+				? 'gemini'
+				: state.activeModel.startsWith('claude')
+					? 'claude'
+					: null;
+			if (fallbackService) {
+				state.activeModel = CONFIG.modelGroups[fallbackService].models[0].id;
+				_modelConfigCache.clear();
+				modelConfig = getActiveModelConfig();
+			}
+		}
 		if (!modelConfig) {
 			showErrorNotification(
 				`Model "${state.activeModel}" is not available. Please select another model.`,
@@ -1549,10 +1565,13 @@ Format exactly as shown:
 		// Extract text based on API provider
 		if (service === 'gemini') {
 			// Gemini response format: { candidates: [{ content: { parts: [{ text: "..." }] } }] }
+			// Thinking-enabled models may prepend parts with `thought: true` before the answer part.
 			const candidate = data?.candidates?.[0];
-			const part = candidate?.content?.parts?.[0];
-			rawSummary = part?.text || '';
+			const parts = candidate?.content?.parts || [];
+			const answerPart = parts.find(p => p.text && !p.thought) || parts[0];
+			rawSummary = answerPart?.text || '';
 			finishReason = candidate?.finishReason || null;
+			blockType = answerPart?.thought ? 'thought' : null;
 
 			// Check for finish reason
 			if (finishReason === 'MAX_TOKENS') {
@@ -1560,13 +1579,15 @@ Format exactly as shown:
 			}
 		} else {
 			// Claude response format (default)
-			const message = data?.content?.[0];
+			// Extended-thinking responses prepend a `thinking` block before the `text` block.
+			const blocks = data?.content || [];
+			const textBlock = blocks.find(b => b.type === 'text') || blocks[0];
 			finishReason = data?.stop_reason || null;
-			blockType = message?.type || null;
+			blockType = textBlock?.type || null;
 			if (finishReason === 'max_tokens') {
 				console.warn('Summarize with AI: Summary may be incomplete (max token limit reached)');
 			}
-			rawSummary = message?.text || '';
+			rawSummary = textBlock?.text || '';
 		}
 
 		if (!rawSummary && !data?.error) {
