@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Summarize with AI
 // @namespace   https://github.com/insign/userscripts
-// @version     2026.06.30.01
+// @version     2026.07.03.01
 // @description Single-button AI summarization (Claude & Gemini) with model selection dropdown for articles/news. Uses Alt+S shortcut. Long press 'S' (or tap-and-hold on mobile) to select model. Allows adding custom models. Custom modals with Dieter Rams-inspired design. Adapts to dark mode and mobile viewports.
 // @author      Hélio <open@helio.me>
 // @contributor Gokul SP (Personal fork maintainer)
@@ -1543,6 +1543,8 @@ Format exactly as shown:
 		}
 
 		let rawSummary = '';
+		let finishReason = null;
+		let blockType = null;
 
 		// Extract text based on API provider
 		if (service === 'gemini') {
@@ -1550,15 +1552,18 @@ Format exactly as shown:
 			const candidate = data?.candidates?.[0];
 			const part = candidate?.content?.parts?.[0];
 			rawSummary = part?.text || '';
+			finishReason = candidate?.finishReason || null;
 
 			// Check for finish reason
-			if (candidate?.finishReason === 'MAX_TOKENS') {
+			if (finishReason === 'MAX_TOKENS') {
 				console.warn('Summarize with AI: Summary may be incomplete (max token limit reached)');
 			}
 		} else {
 			// Claude response format (default)
 			const message = data?.content?.[0];
-			if (data?.stop_reason === 'max_tokens') {
+			finishReason = data?.stop_reason || null;
+			blockType = message?.type || null;
+			if (finishReason === 'max_tokens') {
 				console.warn('Summarize with AI: Summary may be incomplete (max token limit reached)');
 			}
 			rawSummary = message?.text || '';
@@ -1566,7 +1571,16 @@ Format exactly as shown:
 
 		if (!rawSummary && !data?.error) {
 			console.error('Summarize with AI: API Response Data:', data);
-			throw new Error('API response did not contain a valid summary.');
+			const diagnostics = [
+				finishReason ? `stop reason: ${finishReason}` : null,
+				blockType && blockType !== 'text' ? `block type: ${blockType}` : null,
+				`status: ${status}`,
+			]
+				.filter(Boolean)
+				.join(', ');
+			throw new Error(
+				`API response did not contain a valid summary (${diagnostics || 'no diagnostic info in response'}).`,
+			);
 		}
 
 		const cleanedSummary = cleanSummaryHTML(rawSummary);
